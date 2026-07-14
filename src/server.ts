@@ -27,15 +27,17 @@ import {
   searchTribunalConstitucional,
 } from "./sources/index.js";
 import {
-  findArticulo,
+  ArticleNotFoundError,
   findIncisoOrLiteral,
-  FragmentNotFoundError,
+  LeyChileXmlError,
   parseNormaTexto,
+  requireArticulo,
+  UnsupportedNormaStructureError,
 } from "./sources/normaTexto.js";
 import type { SearchResponse } from "./types.js";
 import { formatResultsJson } from "./util.js";
 
-const VERSION = "1.7.2";
+const VERSION = "1.7.3";
 const SEARCH_TOOL_TIMEOUT_MS = Number(
   process.env.SEARCH_TOOL_TIMEOUT_MS ?? 15_000,
 );
@@ -72,6 +74,29 @@ function fail(message: string) {
     content: [{ type: "text" as const, text: message }],
     isError: true as const,
   };
+}
+
+function formatLegalExtractionError(error: unknown, idNorma: string): string {
+  const code = idNorma.replace(/\D/g, "");
+  const official = `https://www.bcn.cl/leychile/navegar?idNorma=${code}`;
+  const xml = `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
+  const message = error instanceof Error ? error.message : String(error);
+  const title =
+    error instanceof ArticleNotFoundError
+      ? "Artículo no encontrado."
+      : error instanceof UnsupportedNormaStructureError
+        ? "Formato XML no soportado por el parser."
+        : error instanceof LeyChileXmlError
+          ? "XML LeyChile inválido o no disponible."
+          : "No se pudo extraer texto oficial desde LeyChile.";
+
+  return [
+    title,
+    `Detalle: ${message}`,
+    `Fuente oficial: ${official}`,
+    `XML oficial: ${xml}`,
+    "No inventes el contenido: verifica manualmente o usa obtener_texto_norma modo=indice para ver artículos detectados.",
+  ].join("\n");
 }
 
 async function timed<T>(name: string, fn: () => Promise<T>): Promise<T> {
@@ -270,17 +295,7 @@ export function createServer(): McpServer {
           ].join("\n"),
         );
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        const code = id_norma.replace(/\D/g, "");
-        return okText(
-          [
-            `No se pudo descargar el XML de LeyChile para idNorma=${code}.`,
-            `Detalle: ${msg}`,
-            `- https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
-            `- https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
-            "No inventes el texto de la norma.",
-          ].join("\n"),
-        );
+        return fail(formatLegalExtractionError(error, id_norma));
       }
     },
   );
@@ -301,15 +316,7 @@ export function createServer(): McpServer {
         const norma = await timed("obtener_articulo", () =>
           parseNormaTexto(id_norma),
         );
-        const art = findArticulo(norma, articulo);
-        if (!art) {
-          return fail(
-            `No se encontró el artículo ${articulo}. Disponibles: ${norma.articulos
-              .map((a) => a.numero)
-              .slice(0, 40)
-              .join(", ")}`,
-          );
-        }
+        const art = requireArticulo(norma, articulo);
         const citation = formatChileanCitation({
           tipo: norma.tipo,
           numero: norma.numero,
@@ -344,16 +351,7 @@ export function createServer(): McpServer {
           ].join("\n"),
         );
       } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        const code = id_norma.replace(/\D/g, "");
-        return okText(
-          [
-            `No se pudo obtener el artículo ${articulo} (idNorma=${code}).`,
-            `Detalle: ${msg}`,
-            `- https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
-            "No inventes el contenido del artículo.",
-          ].join("\n"),
-        );
+        return fail(formatLegalExtractionError(error, id_norma));
       }
     },
   );
@@ -380,8 +378,7 @@ export function createServer(): McpServer {
         const norma = await timed("obtener_inciso", () =>
           parseNormaTexto(id_norma),
         );
-        const art = findArticulo(norma, articulo);
-        if (!art) return fail(`No se encontró el artículo ${articulo}.`);
+        const art = requireArticulo(norma, articulo);
         const frag = findIncisoOrLiteral(art, { inciso, letra });
         const citation = formatChileanCitation({
           tipo: norma.tipo,
@@ -413,12 +410,7 @@ export function createServer(): McpServer {
           ].join("\n"),
         );
       } catch (error) {
-        if (error instanceof FragmentNotFoundError) {
-          return fail(error.message);
-        }
-        return fail(
-          `Error obtener_inciso: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return fail(formatLegalExtractionError(error, id_norma));
       }
     },
   );
@@ -486,12 +478,7 @@ export function createServer(): McpServer {
         }
         return okText(quote.markdown);
       } catch (error) {
-        if (error instanceof FragmentNotFoundError) {
-          return fail(error.message);
-        }
-        return fail(
-          `Error citar_texto_legal: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return fail(formatLegalExtractionError(error, id_norma));
       }
     },
   );

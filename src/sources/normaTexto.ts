@@ -36,6 +36,41 @@ export interface NormaTexto {
   }>;
 }
 
+export class LeyChileXmlError extends Error {
+  constructor(idNorma: string, detail: string) {
+    super(`LeyChile XML inválido/no disponible para idNorma=${idNorma}: ${detail}`);
+    this.name = "LeyChileXmlError";
+  }
+}
+
+export class ArticleNotFoundError extends Error {
+  requested: string;
+  available: string[];
+
+  constructor(norma: NormaTexto, requested: string) {
+    const available = availableArticleNumbers(norma);
+    const sample =
+      available.length > 0
+        ? available.slice(0, 40).join(", ")
+        : "ningún artículo detectado";
+    super(
+      `Artículo no encontrado: ${requested} (idNorma=${norma.idNorma}). Artículos disponibles: ${sample}`,
+    );
+    this.name = "ArticleNotFoundError";
+    this.requested = requested;
+    this.available = available;
+  }
+}
+
+export class UnsupportedNormaStructureError extends Error {
+  constructor(idNorma: string, reason: string) {
+    super(
+      `Formato no soportado para idNorma=${idNorma}: ${reason}. Usa el enlace oficial LeyChile para verificar manualmente.`,
+    );
+    this.name = "UnsupportedNormaStructureError";
+  }
+}
+
 function asArray<T>(value: T | T[] | undefined | null): T[] {
   if (value == null) return [];
   return Array.isArray(value) ? value : [value];
@@ -74,6 +109,15 @@ function normalizeArticleNumber(texto: string): string | undefined {
   );
   if (!match) return undefined;
   return match[1].replace(/\s+/g, " ").replace(/[º°]/g, "").trim();
+}
+
+function normalizeArticleKey(texto: string): string {
+  return texto
+    .toLowerCase()
+    .replace(/art[ií]culo/gi, "")
+    .replace(/[º°]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
 }
 
 function parsePart(node: Record<string, unknown>): NormaPart {
@@ -189,7 +233,7 @@ export async function fetchNormaXml(
       opts.signal,
     );
     if (!xml.includes("<Norma") && !xml.includes("normaId")) {
-      throw new Error(`La BCN no devolvió XML válido para idNorma=${code}`);
+      throw new LeyChileXmlError(code, "la respuesta no contiene un nodo Norma");
     }
     return xml;
   });
@@ -232,6 +276,12 @@ export async function parseNormaTexto(
     });
 
     const articulos = flattenArticles(structures, code);
+    if (structures.length === 0) {
+      throw new UnsupportedNormaStructureError(
+        code,
+        "el XML no contiene EstructurasFuncionales parseables",
+      );
+    }
 
     return {
       idNorma: code,
@@ -271,20 +321,34 @@ export function findArticulo(
   norma: NormaTexto,
   articulo: string,
 ): NormaTexto["articulos"][number] | undefined {
-  const needle = articulo
-    .toLowerCase()
-    .replace(/art[ií]culo/gi, "")
-    .replace(/[º°]/g, "")
-    .replace(/\s+/g, "")
-    .trim();
+  const needle = normalizeArticleKey(articulo);
+  if (!needle) return undefined;
 
   return norma.articulos.find((art) => {
-    const n = art.numero
-      .toLowerCase()
-      .replace(/[º°]/g, "")
-      .replace(/\s+/g, "");
-    return n === needle || n.startsWith(needle) || needle.startsWith(n);
+    const n = normalizeArticleKey(art.numero);
+    return n === needle;
   });
+}
+
+export function availableArticleNumbers(norma: NormaTexto): string[] {
+  return norma.articulos
+    .map((a) => a.numero)
+    .filter((n, i, all) => Boolean(n) && all.indexOf(n) === i);
+}
+
+export function requireArticulo(
+  norma: NormaTexto,
+  articulo: string,
+): NormaTexto["articulos"][number] {
+  const art = findArticulo(norma, articulo);
+  if (!art) throw new ArticleNotFoundError(norma, articulo);
+  if (!art.texto.trim()) {
+    throw new UnsupportedNormaStructureError(
+      norma.idNorma,
+      `el artículo ${art.numero} existe pero no trae texto parseable`,
+    );
+  }
+  return art;
 }
 
 export class FragmentNotFoundError extends Error {
@@ -347,13 +411,7 @@ export function normaToPlainText(
 ): string {
   const maxChars = opts.maxChars ?? 12_000;
   if (opts.articulo) {
-    const art = findArticulo(norma, opts.articulo);
-    if (!art) {
-      return `No se encontró el artículo ${opts.articulo} en la norma ${norma.idNorma}. Artículos disponibles: ${norma.articulos
-        .map((a) => a.numero)
-        .slice(0, 30)
-        .join(", ")}`;
-    }
+    const art = requireArticulo(norma, opts.articulo);
     return [
       `${norma.tipo ?? "Norma"} ${norma.numero ?? norma.idNorma} — ${norma.titulo}`,
       `Artículo ${art.numero}`,

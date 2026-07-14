@@ -3,7 +3,7 @@
 Conector **MCP** de derecho chileno para Claude, Cursor y apps compatibles.
 
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.7.2
+**Versión:** 1.7.3
 
 ## Matriz de honestidad (qué trae cada tool)
 
@@ -45,6 +45,7 @@ Métricas en vivo: `GET /metrics`
 ## Capacidades principales
 
 - Texto oficial LeyChile (artículos, índice/cuerpo, inciso/literal heurístico)
+- Errores tipados: artículo no encontrado, XML inválido y formato no soportado (sin respuestas vacías)
 - Catálogo de normas frecuentes (CPR, Códigos, 19.628, 19.496…)
 - `investigar_tema` — pack anti-alucinación con presupuesto global y salida acotada (~10k chars)
 - `formatear_cita` — citas chilenas solo con IDs ya obtenidos
@@ -94,4 +95,4 @@ Blueprint: [`render.yaml`](render.yaml) — plan **starter**, Key Value, cron ke
 
 ## Aviso
 
-No sustituye asesoría jurídica. PJUD/CGR no ofrecen API abierta de texto completo. El MCP es un puente: si BCN/PJUD/TC fallan, las tools degradan a warning/link o timeout parcial.
+No sustituye asesoría jurídica. PJUD/CGR no ofrecen API abierta de texto completo. El MCP es un puente: si BCN/PJUD/TC fallan, las tools degradan a warning/link o timeout parcial. En LeyChile, un artículo inexistente o XML no parseable se reporta como error explícito con enlaces oficiales de verificación.

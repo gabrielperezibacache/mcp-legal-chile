@@ -1,8 +1,8 @@
 import { formatChileanCitation } from "../citation.js";
 import {
-  findArticulo,
   findIncisoOrLiteral,
   parseNormaTexto,
+  requireArticulo,
   type NormaTexto,
 } from "./normaTexto.js";
 
@@ -29,15 +29,7 @@ export async function citarTextoLegal(opts: {
   letra?: string;
 }): Promise<LegalQuote> {
   const norma = await parseNormaTexto(opts.id_norma);
-  const art = findArticulo(norma, opts.articulo);
-  if (!art) {
-    throw new Error(
-      `No se encontró el artículo ${opts.articulo}. Disponibles: ${norma.articulos
-        .map((a) => a.numero)
-        .slice(0, 40)
-        .join(", ")}`,
-    );
-  }
+  const art = requireArticulo(norma, opts.articulo);
 
   const frag = findIncisoOrLiteral(art, {
     inciso: opts.inciso,
