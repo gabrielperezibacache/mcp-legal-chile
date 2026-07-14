@@ -3,7 +3,7 @@
 Conector **MCP** de derecho chileno para Claude, Cursor y apps compatibles.
 
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.7.1
+**Versión:** 1.7.2
 
 ## Matriz de honestidad (qué trae cada tool)
 
@@ -51,6 +51,8 @@ Métricas en vivo: `GET /metrics`
 - Jurisprudencia/TC con parsers ROL/RIT + catálogo de 18 tribunales/portales
 - Caché durable (Redis si `REDIS_URL`) + singleflight + stale-if-error
 - Rate limit / circuit breaker por proveedor (LeyChile, TC, OpenAlex, Crossref, SciELO…)
+- Concurrencia acotada por proveedor, sin serializar toda la operación (evita cascadas)
+- Búsquedas standalone con deadline duro de 15s (antes podían esperar 45–90s)
 - API keys + cuotas diarias persistentes en Redis (`MCP_API_KEYS` + `REDIS_URL`)
 - Warmup `/warmup` + cron keep-alive
 
@@ -77,6 +79,9 @@ MCP: `http://localhost:3000/mcp`
 | `WARMUP_ON_BOOT` | `1` (default) / `0` |
 | `LEYCHILE_MIN_INTERVAL_MS` | Intervalo mínimo entre requests LeyChile |
 | `CIRCUIT_OPEN_MS` / `CIRCUIT_THRESHOLD` | Circuit breaker |
+| `SEARCH_TOOL_TIMEOUT_MS` | Tope total de búsquedas standalone (default 15s) |
+| `FETCH_TIMEOUT_MS` / `TC_TIMEOUT_MS` / `SPARQL_TIMEOUT_MS` | Topes upstream (12s / 10s / 10s) |
+| `*_MAX_CONCURRENT` | Concurrencia por proveedor (web 3; TC/OpenAlex/etc. 2; LeyChile 1) |
 | `UNIFIED_BUDGET_MS` | Tope fan-out `buscar_derecho_chileno` (default 8s) |
 | `PACK_TOTAL_MS` | Tope global `investigar_tema` (default 12s) |
 | `PACK_TIMEOUT_MS` | Tope por fuente dentro del pack (default ~6s) |

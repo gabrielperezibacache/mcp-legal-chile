@@ -29,7 +29,7 @@ const circuits: Record<HostKey, CircuitState> = {
   websearch: makeCircuit(),
 };
 
-const queues: Record<HostKey, Promise<unknown>> = {
+const startQueues: Record<HostKey, Promise<unknown>> = {
   leychile: Promise.resolve(),
   bcn: Promise.resolve(),
   tc: Promise.resolve(),
@@ -37,6 +37,36 @@ const queues: Record<HostKey, Promise<unknown>> = {
   crossref: Promise.resolve(),
   scielo: Promise.resolve(),
   websearch: Promise.resolve(),
+};
+
+const active: Record<HostKey, number> = {
+  leychile: 0,
+  bcn: 0,
+  tc: 0,
+  openalex: 0,
+  crossref: 0,
+  scielo: 0,
+  websearch: 0,
+};
+
+const waiters: Record<HostKey, Array<() => void>> = {
+  leychile: [],
+  bcn: [],
+  tc: [],
+  openalex: [],
+  crossref: [],
+  scielo: [],
+  websearch: [],
+};
+
+const MAX_CONCURRENT: Record<HostKey, number> = {
+  leychile: Number(process.env.LEYCHILE_MAX_CONCURRENT ?? 1),
+  bcn: Number(process.env.BCN_MAX_CONCURRENT ?? 2),
+  tc: Number(process.env.TC_MAX_CONCURRENT ?? 2),
+  openalex: Number(process.env.OPENALEX_MAX_CONCURRENT ?? 2),
+  crossref: Number(process.env.CROSSREF_MAX_CONCURRENT ?? 2),
+  scielo: Number(process.env.SCIELO_MAX_CONCURRENT ?? 2),
+  websearch: Number(process.env.WEBSEARCH_MAX_CONCURRENT ?? 3),
 };
 
 const MIN_INTERVAL_MS: Record<HostKey, number> = {
@@ -51,6 +81,30 @@ const MIN_INTERVAL_MS: Record<HostKey, number> = {
 
 const CIRCUIT_OPEN_MS = Number(process.env.CIRCUIT_OPEN_MS ?? 90_000);
 const CIRCUIT_THRESHOLD = Number(process.env.CIRCUIT_THRESHOLD ?? 3);
+
+async function acquireSlot(key: HostKey): Promise<void> {
+  if (active[key] >= MAX_CONCURRENT[key]) {
+    await new Promise<void>((resolve) => waiters[key].push(resolve));
+  }
+  active[key] += 1;
+}
+
+function releaseSlot(key: HostKey): void {
+  active[key] = Math.max(0, active[key] - 1);
+  waiters[key].shift()?.();
+}
+
+/** Stagger request starts without serializing the whole network operation. */
+async function scheduleStart(key: HostKey): Promise<void> {
+  const scheduled = startQueues[key].then(
+    () => new Promise<void>((resolve) => setTimeout(resolve, MIN_INTERVAL_MS[key])),
+  );
+  startQueues[key] = scheduled.then(
+    () => undefined,
+    () => undefined,
+  );
+  await scheduled;
+}
 
 export function upstreamHostKey(url: string): HostKey {
   try {
@@ -108,17 +162,17 @@ function noteFailure(key: HostKey, status?: number): void {
   }
 }
 
-/** Serialize upstream calls per host and enforce min interval + circuit breaker. */
+/** Limit concurrency per provider and stagger starts without head-of-line blocking. */
 export async function withUpstreamLimit<T>(
   url: string,
   fn: () => Promise<T>,
 ): Promise<T> {
   const key = upstreamHostKey(url);
   assertCircuit(key);
-
-  const run = queues[key].then(async () => {
+  await acquireSlot(key);
+  try {
+    await scheduleStart(key);
     assertCircuit(key);
-    await new Promise((r) => setTimeout(r, MIN_INTERVAL_MS[key]));
     try {
       const value = await fn();
       noteSuccess(key);
@@ -130,13 +184,9 @@ export async function withUpstreamLimit<T>(
       noteFailure(key, status);
       throw error;
     }
-  });
-
-  queues[key] = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
+  } finally {
+    releaseSlot(key);
+  }
 }
 
 export function upstreamStatus() {
@@ -149,6 +199,9 @@ export function upstreamStatus() {
         openedAt: v.openedAt,
         last429At: v.last429At,
         minIntervalMs: MIN_INTERVAL_MS[k as HostKey],
+        active: active[k as HostKey],
+        queued: waiters[k as HostKey].length,
+        maxConcurrent: MAX_CONCURRENT[k as HostKey],
       },
     ]),
   );

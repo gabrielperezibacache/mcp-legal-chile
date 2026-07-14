@@ -399,12 +399,13 @@ export async function searchJurisprudencia(
 export async function searchTribunalConstitucional(
   query: string,
   limit = 8,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<SearchResponse> {
   const warnings: string[] = [
     "Fuente: API oficial buscador-backend.tcchile.cl. Usa obtener_fallo_tc para extracto.",
   ];
   try {
-    const hits = await searchTcSentencias(query, limit);
+    const hits = await searchTcSentencias(query, limit, opts.signal);
     const results = hits.map(tcHitToCitation);
     return {
       query,
@@ -416,6 +417,7 @@ export async function searchTribunalConstitucional(
       },
     };
   } catch (error) {
+    if (opts.signal?.aborted) throw error;
     warnings.push(
       `API TC no disponible (${error instanceof Error ? error.message : String(error)}); fallback web.`,
     );
@@ -423,6 +425,7 @@ export async function searchTribunalConstitucional(
       site: "tribunalconstitucional.cl",
       tribunal: "Tribunal Constitucional",
       soloOficiales: true,
+      signal: opts.signal,
     });
     return {
       ...fallback,

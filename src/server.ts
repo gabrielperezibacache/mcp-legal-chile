@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { formatChileanCitation } from "./citation.js";
+import { runWithDeadline } from "./deadline.js";
 import { formatSearchMarkdown } from "./format.js";
 import { metrics } from "./metrics.js";
 import {
@@ -34,7 +35,10 @@ import {
 import type { SearchResponse } from "./types.js";
 import { formatResultsJson } from "./util.js";
 
-const VERSION = "1.7.1";
+const VERSION = "1.7.2";
+const SEARCH_TOOL_TIMEOUT_MS = Number(
+  process.env.SEARCH_TOOL_TIMEOUT_MS ?? 15_000,
+);
 
 const latamPaisSchema = z
   .enum(["PE", "BR", "AR", "MX", "CO"])
@@ -75,6 +79,15 @@ async function timed<T>(name: string, fn: () => Promise<T>): Promise<T> {
   return metrics.time("tool", () => metrics.time(name, fn));
 }
 
+async function timedSearch<T>(
+  name: string,
+  fn: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  return timed(name, () =>
+    runWithDeadline(name, SEARCH_TOOL_TIMEOUT_MS, fn),
+  );
+}
+
 export function createServer(): McpServer {
   const server = new McpServer({
     name: "mcp-legal-chile",
@@ -96,8 +109,8 @@ export function createServer(): McpServer {
     async ({ consulta, limite, formato }) => {
       try {
         return okSearch(
-          await timed("buscar_legislacion", () =>
-            searchLegislacion(consulta, limite),
+          await timedSearch("buscar_legislacion", (signal) =>
+            searchLegislacion(consulta, limite, { signal }),
           ),
           formato,
         );
@@ -548,11 +561,12 @@ export function createServer(): McpServer {
     }) => {
       try {
         return okSearch(
-          await timed("buscar_jurisprudencia", () =>
+          await timedSearch("buscar_jurisprudencia", (signal) =>
             searchJurisprudencia(consulta, limite, {
               anio,
               tribunal,
               soloOficiales: solo_urls_oficiales,
+              signal,
             }),
           ),
           formato,
@@ -580,8 +594,8 @@ export function createServer(): McpServer {
     async ({ consulta, limite, formato }) => {
       try {
         return okSearch(
-          await timed("buscar_tc", () =>
-            searchTribunalConstitucional(consulta, limite),
+          await timedSearch("buscar_tc", (signal) =>
+            searchTribunalConstitucional(consulta, limite, { signal }),
           ),
           formato,
         );
@@ -609,8 +623,8 @@ export function createServer(): McpServer {
     },
     async ({ rol, tribunal, anio, limite, formato }) => {
       try {
-        const data = await timed("resolver_rol", () =>
-          resolverRol({ rol, tribunal, anio, limite }),
+        const data = await timedSearch("resolver_rol", (signal) =>
+          resolverRol({ rol, tribunal, anio, limite, signal }),
         );
         if (formato === "json") return okText(formatResultsJson(data));
         return okText(resolveRolToMarkdown(data));
@@ -635,7 +649,9 @@ export function createServer(): McpServer {
     },
     async ({ rol, formato }) => {
       try {
-        const pack = await timed("obtener_fallo_tc", () => obtenerFalloTc(rol));
+        const pack = await timedSearch("obtener_fallo_tc", (signal) =>
+          obtenerFalloTc(rol, signal),
+        );
         if (formato === "json") return okText(formatResultsJson(pack));
         return okText(pack.markdown);
       } catch (error) {
@@ -660,8 +676,8 @@ export function createServer(): McpServer {
     },
     async ({ consulta, limite, formato }) => {
       try {
-        const data = await timed("buscar_doctrina", () =>
-          searchDoctrina(consulta, limite),
+        const data = await timedSearch("buscar_doctrina", (signal) =>
+          searchDoctrina(consulta, limite, { signal }),
         );
         if (formato === "json") {
           return okSearch(data, "json");
@@ -726,8 +742,8 @@ export function createServer(): McpServer {
     async ({ consulta, limite, formato }) => {
       try {
         return okSearch(
-          await timed("buscar_dictamenes", () =>
-            searchDictamenes(consulta, limite),
+          await timedSearch("buscar_dictamenes", (signal) =>
+            searchDictamenes(consulta, limite, { signal }),
           ),
           formato,
         );

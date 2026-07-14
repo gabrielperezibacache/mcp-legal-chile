@@ -1,6 +1,6 @@
 {
   "name": "mcp-legal-chile",
-  "version": "1.7.1",
+  "version": "1.7.2",
   "description": "Conector MCP del derecho chileno: legislación, jurisprudencia, doctrina y dictámenes con citas verificables.",
   "type": "module",
   "main": "dist/index.js",

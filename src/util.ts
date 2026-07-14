@@ -6,7 +6,9 @@ export const USER_AGENT =
   process.env.USER_AGENT ??
   "MCP-Legal-Chile/1.2 (conector MCP; https://mcp-legal-chile.onrender.com)";
 
-const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS ?? 45_000);
+// Search/metadata calls must finish well before common MCP client limits (~60s).
+// Long-running XML extraction passes an explicit timeout instead.
+const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS ?? 12_000);
 
 async function rawFetch(
   url: string,
@@ -16,6 +18,8 @@ async function rawFetch(
 ): Promise<Response> {
   throwIfAborted(signal);
   return withUpstreamLimit(url, async () => {
+    // The signal may have aborted while this request waited for a provider slot.
+    throwIfAborted(signal);
     const controller = new AbortController();
     const onExternalAbort = () => controller.abort();
     signal?.addEventListener("abort", onExternalAbort);

@@ -5,6 +5,7 @@ import { fetchJson } from "../util.js";
 const TC_API = "https://buscador-backend.tcchile.cl/api/extended";
 const TC_FICHA_API = "https://buscador-backend.tcchile.cl/api/buscadorexterno/ficha";
 const TC_Buscador_UI = "https://buscador.tcchile.cl";
+const TC_TIMEOUT_MS = Number(process.env.TC_TIMEOUT_MS ?? 10_000);
 
 export interface TcSearchHit {
   id: string;
@@ -80,7 +81,7 @@ export async function searchTcSentencias(
     const data = await fetchJson<TcSearchResponse>(
       `${TC_API}/sentencias?filter=${filter}`,
       {},
-      90_000,
+      TC_TIMEOUT_MS,
       signal,
     );
     const rows = data.data?.results ?? [];
@@ -129,7 +130,7 @@ export async function getTcFicha(
     const data = await fetchJson<TcFichaResponse>(
       `${TC_FICHA_API}/${encodeURIComponent(folioOrId)}`,
       {},
-      60_000,
+      TC_TIMEOUT_MS,
       signal,
     );
     const f = data.data;

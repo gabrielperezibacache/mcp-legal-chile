@@ -8,7 +8,7 @@ import {
 } from "../util.js";
 
 const SPARQL_ENDPOINT = "https://datos.bcn.cl/sparql";
-const SPARQL_TIMEOUT_MS = Number(process.env.SPARQL_TIMEOUT_MS ?? 60_000);
+const SPARQL_TIMEOUT_MS = Number(process.env.SPARQL_TIMEOUT_MS ?? 10_000);
 
 interface SparqlBinding {
   [key: string]: { type: string; value: string; datatype?: string };
