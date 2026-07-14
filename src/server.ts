@@ -186,8 +186,19 @@ export function createServer(): McpServer {
             .join("\n"),
         );
       } catch (error) {
-        return fail(
-          `Error al obtener texto de la norma: ${error instanceof Error ? error.message : String(error)}`,
+        const msg = error instanceof Error ? error.message : String(error);
+        const code = id_norma.replace(/\D/g, "");
+        return okText(
+          [
+            `No se pudo descargar el XML de LeyChile para idNorma=${code}.`,
+            `Detalle: ${msg}`,
+            "",
+            "Usa estas URLs oficiales (no inventes el texto):",
+            `- https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
+            `- https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
+            "",
+            "Si el error es HTTP 429, reintenta en unos minutos (límite de tasa de LeyChile).",
+          ].join("\n"),
         );
       }
     },
@@ -250,8 +261,19 @@ export function createServer(): McpServer {
           ].join("\n"),
         );
       } catch (error) {
-        return fail(
-          `Error al obtener artículo: ${error instanceof Error ? error.message : String(error)}`,
+        const msg = error instanceof Error ? error.message : String(error);
+        const code = id_norma.replace(/\D/g, "");
+        return okText(
+          [
+            `No se pudo obtener el artículo ${articulo} (idNorma=${code}).`,
+            `Detalle: ${msg}`,
+            "",
+            "Consulta el texto oficial en:",
+            `- https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
+            `- https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
+            "",
+            "No inventes el contenido del artículo.",
+          ].join("\n"),
         );
       }
     },

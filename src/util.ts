@@ -72,7 +72,8 @@ export async function fetchTextWithRetry(
         message,
       );
       if (!retryable || attempt === retries - 1) break;
-      await new Promise((r) => setTimeout(r, 800 * 2 ** attempt));
+      // Longer backoff helps against LeyChile rate limits from cloud IPs.
+      await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt));
     }
   }
   throw lastError instanceof Error
