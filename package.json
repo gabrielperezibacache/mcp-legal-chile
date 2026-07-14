@@ -1,6 +1,6 @@
 {
   "name": "mcp-legal-chile",
-  "version": "1.3.0",
+  "version": "1.7.0",
   "description": "Conector MCP del derecho chileno: legislación, jurisprudencia, doctrina y dictámenes con citas verificables.",
   "type": "module",
   "main": "dist/index.js",
@@ -13,6 +13,7 @@
     "dev": "tsx src/index.ts",
     "stdio": "tsx src/stdio.ts",
     "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test tests/**/*.test.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
   "engines": {

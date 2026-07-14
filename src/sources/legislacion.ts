@@ -89,7 +89,10 @@ function toCitation(b: SparqlBinding): CitationResult | null {
   };
 }
 
-async function runSparql(sparql: string): Promise<SparqlResponse> {
+async function runSparql(
+  sparql: string,
+  signal?: AbortSignal,
+): Promise<SparqlResponse> {
   const key = `sparql:${sparql.replace(/\s+/g, " ").trim()}`;
   return sparqlCache.getOrSet(key, () =>
     fetchJson<SparqlResponse>(
@@ -103,6 +106,7 @@ async function runSparql(sparql: string): Promise<SparqlResponse> {
         body: new URLSearchParams({ query: sparql }),
       },
       SPARQL_TIMEOUT_MS,
+      signal,
     ),
   );
 }
@@ -136,6 +140,7 @@ function bindingsToResults(
 export async function searchLegislacion(
   query: string,
   limit = 8,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<SearchResponse> {
   const hot = resolveHotNorma(query);
   if (hot) {
@@ -198,7 +203,7 @@ ORDER BY DESC(?date)
 LIMIT ${Math.min(Math.max(limit * 3, 12), 30)}
 `.trim();
 
-  const data = await runSparql(sparql);
+  const data = await runSparql(sparql, opts.signal);
   const results = bindingsToResults(data.results.bindings, limit);
 
   return {

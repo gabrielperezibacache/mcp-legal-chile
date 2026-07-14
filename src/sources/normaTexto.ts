@@ -272,6 +272,21 @@ export function findArticulo(
   });
 }
 
+export class FragmentNotFoundError extends Error {
+  constructor(
+    kind: "inciso" | "letra",
+    requested: string,
+    available: string[],
+  ) {
+    const list =
+      available.length > 0
+        ? available.join(", ")
+        : "ninguno detectado en el parseo del artículo";
+    super(`No se encontró ${kind} ${requested}. Disponibles: ${list}`);
+    this.name = "FragmentNotFoundError";
+  }
+}
+
 export function findIncisoOrLiteral(
   art: NormaTexto["articulos"][number],
   opts: { inciso?: string; letra?: string },
@@ -284,6 +299,11 @@ export function findIncisoOrLiteral(
     if (lit) {
       return { kind: "literal", texto: lit.texto, label: `lit. ${lit.letra})` };
     }
+    throw new FragmentNotFoundError(
+      "letra",
+      opts.letra,
+      art.literales.map((l) => l.letra),
+    );
   }
   if (opts.inciso) {
     const needle = opts.inciso.replace(/[º°]/g, "").toLowerCase();
@@ -293,6 +313,11 @@ export function findIncisoOrLiteral(
     if (inc) {
       return { kind: "inciso", texto: inc.texto, label: `inc. ${inc.label}` };
     }
+    throw new FragmentNotFoundError(
+      "inciso",
+      opts.inciso,
+      art.incisos.map((i) => i.label),
+    );
   }
   return { kind: "articulo", texto: art.texto, label: `art. ${art.numero}` };
 }

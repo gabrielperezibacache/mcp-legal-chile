@@ -72,6 +72,8 @@ async function main() {
       "investigar_tema",
       "formatear_cita",
       "buscar_tc",
+      "resolver_rol",
+      "obtener_fallo_tc",
       "estado_norma",
     ]) {
       if (!names.includes(required)) throw new Error(`missing ${required}`);

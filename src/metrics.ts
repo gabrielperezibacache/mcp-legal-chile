@@ -1,5 +1,7 @@
 /** In-process metrics for SLOs and /metrics endpoint. */
 
+import pkg from "../package.json" with { type: "json" };
+
 type LatencyBucket = number[];
 
 const MAX_SAMPLES = 200;
@@ -73,7 +75,7 @@ export const metrics = {
       pushLatency(name, Date.now() - start);
     }
   },
-  snapshot() {
+  snapshot(version = pkg.version) {
     const slo = {
       obtener_articulo_cache_hit_p95_ms: 500,
       obtener_articulo_cold_p95_ms: 5000,
@@ -81,9 +83,19 @@ export const metrics = {
       buscar_derecho_chileno_p95_ms: 8000,
       xml_success_rate_24h_target: 0.95,
     };
+    const upstreamKeys = [
+      "leychile_xml",
+      "bcn",
+      "tc",
+      "openalex",
+      "crossref",
+      "scielo",
+      "websearch",
+      "tool",
+    ] as const;
     return {
       service: "mcp-legal-chile",
-      version: "1.2.0",
+      version,
       uptimeSec: Math.round((Date.now() - state.startedAt) / 1000),
       counters: {
         requests: state.requests,
@@ -94,12 +106,9 @@ export const metrics = {
         upstreamErrors: state.upstreamErrors,
         circuitOpens: state.circuitOpens,
       },
-      latencies: {
-        sparql: summarize("sparql"),
-        leychile_xml: summarize("leychile_xml"),
-        websearch: summarize("websearch"),
-        tool: summarize("tool"),
-      },
+      latencies: Object.fromEntries(
+        upstreamKeys.map((name) => [name, summarize(name)]),
+      ),
       slo,
     };
   },

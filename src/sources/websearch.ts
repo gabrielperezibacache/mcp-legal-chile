@@ -1,5 +1,6 @@
 import type { CitationResult } from "../types.js";
 import { webCache } from "../cache.js";
+import { throwIfAborted } from "../deadline.js";
 import { fetchJson, fetchText, stripHtml, uniqueByUrl } from "../util.js";
 
 export interface WebHit {
@@ -44,19 +45,28 @@ function extractDuckDuckGoHits(html: string): WebHit[] {
   return hits;
 }
 
-async function searchWithSerper(query: string, limit: number): Promise<WebHit[]> {
+async function searchWithSerper(
+  query: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<WebHit[]> {
   const key = process.env.SEARCH_API_KEY ?? process.env.SERPER_API_KEY;
   if (!key) throw new Error("no search api key");
   const data = await fetchJson<{
     organic?: Array<{ title?: string; link?: string; snippet?: string }>;
-  }>("https://google.serper.dev/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-KEY": key,
+  }>(
+    "https://google.serper.dev/search",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-KEY": key,
+      },
+      body: JSON.stringify({ q: query, num: limit }),
     },
-    body: JSON.stringify({ q: query, num: limit }),
-  });
+    undefined,
+    signal,
+  );
   return (data.organic ?? [])
     .filter((r) => r.title && r.link)
     .map((r) => ({
@@ -66,18 +76,27 @@ async function searchWithSerper(query: string, limit: number): Promise<WebHit[]>
     }));
 }
 
-async function searchWithBrave(query: string, limit: number): Promise<WebHit[]> {
+async function searchWithBrave(
+  query: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<WebHit[]> {
   const key = process.env.BRAVE_API_KEY;
   if (!key) throw new Error("no brave key");
   const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limit}`;
   const data = await fetchJson<{
     web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
-  }>(url, {
-    headers: {
-      Accept: "application/json",
-      "X-Subscription-Token": key,
+  }>(
+    url,
+    {
+      headers: {
+        Accept: "application/json",
+        "X-Subscription-Token": key,
+      },
     },
-  });
+    undefined,
+    signal,
+  );
   return (data.web?.results ?? [])
     .filter((r) => r.title && r.url)
     .map((r) => ({
@@ -87,25 +106,36 @@ async function searchWithBrave(query: string, limit: number): Promise<WebHit[]> 
     }));
 }
 
-async function searchDuckDuckGo(query: string, limit: number): Promise<WebHit[]> {
+async function searchDuckDuckGo(
+  query: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<WebHit[]> {
   const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-  const html = await fetchText(url, {
-    headers: {
-      Accept: "text/html",
-      "Accept-Language": "es-CL,es;q=0.9",
+  const html = await fetchText(
+    url,
+    {
+      headers: {
+        Accept: "text/html",
+        "Accept-Language": "es-CL,es;q=0.9",
+      },
     },
-  });
+    undefined,
+    signal,
+  );
   return uniqueByUrl(extractDuckDuckGoHits(html)).slice(0, limit);
 }
 
 export async function searchWeb(
   query: string,
-  opts: { site?: string; limit?: number } = {},
+  opts: { site?: string; limit?: number; signal?: AbortSignal } = {},
 ): Promise<WebHit[]> {
+  throwIfAborted(opts.signal);
   const limit = opts.limit ?? 8;
   const q = opts.site ? `${query} site:${opts.site}` : query;
   const cacheKey = `web:${q}:${limit}`;
   return webCache.getOrSet(cacheKey, async () => {
+    throwIfAborted(opts.signal);
     const provider = (process.env.SEARCH_PROVIDER ?? "auto").toLowerCase();
     try {
       if (
@@ -113,18 +143,24 @@ export async function searchWeb(
         (provider === "auto" &&
           (process.env.SEARCH_API_KEY || process.env.SERPER_API_KEY))
       ) {
-        return uniqueByUrl(await searchWithSerper(q, limit)).slice(0, limit);
+        return uniqueByUrl(await searchWithSerper(q, limit, opts.signal)).slice(
+          0,
+          limit,
+        );
       }
       if (
         provider === "brave" ||
         (provider === "auto" && process.env.BRAVE_API_KEY)
       ) {
-        return uniqueByUrl(await searchWithBrave(q, limit)).slice(0, limit);
+        return uniqueByUrl(await searchWithBrave(q, limit, opts.signal)).slice(
+          0,
+          limit,
+        );
       }
     } catch {
       /* fall through to DDG */
     }
-    return searchDuckDuckGo(q, limit);
+    return searchDuckDuckGo(q, limit, opts.signal);
   });
 }
 

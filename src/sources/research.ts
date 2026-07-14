@@ -1,8 +1,15 @@
 import { resolveHotNorma } from "../catalog.js";
+import { runWithDeadline } from "../deadline.js";
 import type { SearchResponse } from "../types.js";
+import { normalizeRol } from "../parsers.js";
 import { searchDictamenes } from "./dictamenes.js";
 import { searchDoctrina } from "./doctrina.js";
-import { searchJurisprudencia } from "./jurisprudencia.js";
+import {
+  obtenerFalloTc,
+  resolverRol,
+  searchJurisprudencia,
+  type ResolveRolResult,
+} from "./jurisprudencia.js";
 import { searchLegislacion } from "./legislacion.js";
 import {
   findArticulo,
@@ -14,32 +21,74 @@ function extractArticuloMention(query: string): string | undefined {
   return m?.[1]?.replace(/\s+/g, " ");
 }
 
+function extractRolMention(query: string): string | undefined {
+  const m = query.match(
+    /\b(?:rol|rol\s*n[ºo°.]?)\s*[:.]?\s*([0-9]{1,6}\s*[-–.\/]\s*[0-9]{2,4}(?:\s*[-–]\s*[A-Z]{2,4})?)\b/i,
+  );
+  return m?.[1]?.replace(/\s+/g, "");
+}
+
+function isTcMention(query: string): boolean {
+  return /\b(?:tc|tribunal constitucional|ina|inc|cpt|caa|cds)\b/i.test(query);
+}
+
+function shouldFetchTcFallo(
+  query: string,
+  resolved?: ResolveRolResult,
+): boolean {
+  if (isTcMention(query)) return true;
+  return Boolean(
+    resolved?.results.some((r) => r.tribunal === "Tribunal Constitucional"),
+  );
+}
+
 export async function investigarTema(
   consulta: string,
   limitePorFuente = 3,
 ): Promise<string> {
   const timeoutMs = Number(process.env.PACK_TIMEOUT_MS ?? 8000);
-  const withTimeout = <T>(p: Promise<T>, label: string) =>
-    Promise.race([
-      p,
-      new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Timeout ${label} (${timeoutMs}ms)`)),
-          timeoutMs,
-        ),
-      ),
-    ]);
-
   const pending: string[] = [];
-  const [leg, juris, doc, dict] = await Promise.allSettled([
-    withTimeout(searchLegislacion(consulta, limitePorFuente), "legislacion"),
-    withTimeout(
-      searchJurisprudencia(consulta, limitePorFuente),
-      "jurisprudencia",
+  const rolMention = extractRolMention(consulta);
+  const tcMention = isTcMention(consulta);
+
+  const [leg, juris, doc, dict, rolRes] = await Promise.allSettled([
+    runWithDeadline("legislacion", timeoutMs, (signal) =>
+      searchLegislacion(consulta, limitePorFuente, { signal }),
     ),
-    withTimeout(searchDoctrina(consulta, limitePorFuente), "doctrina"),
-    withTimeout(searchDictamenes(consulta, limitePorFuente), "dictamenes"),
+    runWithDeadline("jurisprudencia", timeoutMs, (signal) =>
+      searchJurisprudencia(consulta, limitePorFuente, { signal }),
+    ),
+    runWithDeadline("doctrina", timeoutMs, (signal) =>
+      searchDoctrina(consulta, limitePorFuente, { signal }),
+    ),
+    runWithDeadline("dictamenes", timeoutMs, (signal) =>
+      searchDictamenes(consulta, limitePorFuente, { signal }),
+    ),
+    rolMention
+      ? runWithDeadline("resolver_rol", timeoutMs, (signal) =>
+          resolverRol({
+            rol: rolMention,
+            tribunal: tcMention ? "Tribunal Constitucional" : undefined,
+            limite: limitePorFuente,
+            signal,
+          }),
+        )
+      : Promise.resolve(undefined),
   ]);
+
+  const rolResolved =
+    rolRes.status === "fulfilled" ? rolRes.value : undefined;
+  let falloTc: Awaited<ReturnType<typeof obtenerFalloTc>> | undefined;
+  if (rolRes.status === "rejected") pending.push("resolver_rol");
+  if (rolMention && shouldFetchTcFallo(consulta, rolResolved)) {
+    try {
+      falloTc = await runWithDeadline("obtener_fallo_tc", timeoutMs, (signal) =>
+        obtenerFalloTc(rolMention, signal),
+      );
+    } catch {
+      pending.push("obtener_fallo_tc");
+    }
+  }
 
   const sections: string[] = [
     `# Pack de investigación — ${consulta}`,
@@ -48,7 +97,6 @@ export async function investigarTema(
     "",
   ];
 
-  // Marco normativo
   sections.push("## 1. Marco normativo");
   if (leg.status === "fulfilled" && leg.value.results.length) {
     for (const r of leg.value.results) {
@@ -61,7 +109,6 @@ export async function investigarTema(
     sections.push("- Sin resultados de legislación en el tiempo disponible.");
   }
 
-  // Auto article fetch
   const articulo = extractArticuloMention(consulta);
   const hot = resolveHotNorma(consulta);
   const idFromLeg =
@@ -104,6 +151,45 @@ export async function investigarTema(
     );
   }
 
+  if (rolMention) {
+    sections.push("", "## 1.c ROL detectado");
+    if (rolResolved) {
+      sections.push(`**ROL normalizado:** ${normalizeRol(rolMention).display}`);
+      sections.push(`**Cita sugerida:** ${rolResolved.citation}`);
+      const tcResults = rolResolved.results.filter(
+        (r) => r.tribunal === "Tribunal Constitucional",
+      );
+      const otherResults = rolResolved.results.filter(
+        (r) => r.tribunal !== "Tribunal Constitucional",
+      );
+      if (tcResults.length) {
+        sections.push("", "**Candidatos TC:**");
+        for (const r of tcResults.slice(0, limitePorFuente)) {
+          sections.push(
+            `- ${r.citation} — ${r.url}${r.secondaryUrl ? ` (PDF: ${r.secondaryUrl})` : ""}`,
+          );
+        }
+      }
+      if (otherResults.length) {
+        sections.push("", "**Candidatos PJUD / otros portales:**");
+        for (const r of otherResults.slice(0, limitePorFuente)) {
+          sections.push(`- ${r.title} — ${r.url}`);
+        }
+      }
+      if (falloTc) {
+        sections.push("", "### Extracto oficial TC", falloTc.markdown);
+      }
+      if (rolResolved.warnings.length) {
+        sections.push(
+          "",
+          ...rolResolved.warnings.map((w) => `- _Advertencia ROL:_ ${w}`),
+        );
+      }
+    } else {
+      sections.push("- No se pudo resolver el ROL en el tiempo disponible.");
+    }
+  }
+
   const dumpSource = (
     title: string,
     result: PromiseSettledResult<SearchResponse>,
@@ -119,7 +205,7 @@ export async function investigarTema(
       sections.push("- Sin hallazgos.");
       return;
     }
-        for (const r of result.value.results) {
+    for (const r of result.value.results) {
       if (label === "doctrina") {
         sections.push(`- **${r.title}**`);
         sections.push(`  - Cita: ${r.citation}`);

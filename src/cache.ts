@@ -1,4 +1,5 @@
 import { metrics } from "./metrics.js";
+import { getSharedRedis } from "./redisClient.js";
 
 type CacheEntry<T> = {
   expiresAt: number;
@@ -39,26 +40,13 @@ type RedisClient = {
     value: string,
     opts: { EX: number },
   ) => Promise<unknown>;
-  connect: () => Promise<unknown>;
-  on: (event: string, cb: (err: Error) => void) => void;
-  isOpen?: boolean;
 };
 
 let redisClientPromise: Promise<RedisClient | null> | null = null;
 
 async function getRedisClient(url: string): Promise<RedisClient | null> {
   if (!redisClientPromise) {
-    redisClientPromise = (async () => {
-      try {
-        const { createClient } = await import("redis");
-        const client = createClient({ url }) as unknown as RedisClient;
-        client.on("error", () => undefined);
-        await client.connect();
-        return client;
-      } catch {
-        return null;
-      }
-    })();
+    redisClientPromise = getSharedRedis() as Promise<RedisClient | null>;
   }
   return redisClientPromise;
 }
@@ -104,7 +92,10 @@ export class TtlCache {
   get<T>(key: string): T | undefined {
     const hit = this.local.get(key);
     if (!hit) return undefined;
-    if (Date.now() > hit.expiresAt) return undefined;
+    if (Date.now() > hit.expiresAt) {
+      this.local.delete(key);
+      return undefined;
+    }
     metrics.markCacheHit();
     return hit.value as T;
   }
@@ -112,7 +103,10 @@ export class TtlCache {
   getStale<T>(key: string): T | undefined {
     const hit = this.local.get(key);
     if (!hit) return undefined;
-    if (Date.now() > hit.staleUntil) return undefined;
+    if (Date.now() > hit.staleUntil) {
+      this.local.delete(key);
+      return undefined;
+    }
     return hit.value as T;
   }
 

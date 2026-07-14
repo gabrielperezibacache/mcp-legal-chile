@@ -1,12 +1,17 @@
 import type { SearchResponse } from "../types.js";
 export {
   doctrineToMarkdown,
+  formatDoctrineSearchMarkdown,
   obtenerDoctrina,
   searchDoctrina,
+  searchDoctrinaLatam,
 } from "./doctrina.js";
 import { searchDoctrina } from "./doctrina.js";
 import { searchDictamenes, resolverDictamen } from "./dictamenes.js";
 import {
+  obtenerFalloTc,
+  resolverRol,
+  resolveRolToMarkdown,
   searchJurisprudencia,
   searchTribunalConstitucional,
 } from "./jurisprudencia.js";
@@ -25,7 +30,10 @@ export {
   getNorma,
   investigarTema,
   normasRelacionadas,
+  obtenerFalloTc,
   resolverDictamen,
+  resolverRol,
+  resolveRolToMarkdown,
   searchDictamenes,
   searchJurisprudencia,
   searchLegislacion,

@@ -13,6 +13,7 @@ function extractDictamenNumber(query: string): string | undefined {
 export async function searchDictamenes(
   query: string,
   limit = 8,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<SearchResponse> {
   const warnings: string[] = [
     "Evidencia=link_only: confirma el texto íntegro en el portal de la Contraloría.",
@@ -52,6 +53,7 @@ export async function searchDictamenes(
         {
           site,
           limit: Math.max(3, Math.ceil(limit / sites.length)),
+          signal: opts.signal,
         },
       );
       const citations = webHitsToCitations(hits, "dictamenes", publisher).map(

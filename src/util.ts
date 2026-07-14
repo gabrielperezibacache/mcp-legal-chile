@@ -1,5 +1,6 @@
+import { throwIfAborted } from "./deadline.js";
 import { metrics } from "./metrics.js";
-import { withUpstreamLimit } from "./upstream.js";
+import { upstreamHostKey, withUpstreamLimit } from "./upstream.js";
 
 export const USER_AGENT =
   process.env.USER_AGENT ??
@@ -11,9 +12,13 @@ async function rawFetch(
   url: string,
   init: RequestInit,
   timeoutMs: number,
+  signal?: AbortSignal,
 ): Promise<Response> {
+  throwIfAborted(signal);
   return withUpstreamLimit(url, async () => {
     const controller = new AbortController();
+    const onExternalAbort = () => controller.abort();
+    signal?.addEventListener("abort", onExternalAbort);
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       return await fetch(url, {
@@ -26,16 +31,23 @@ async function rawFetch(
       });
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onExternalAbort);
     }
   });
+}
+
+function metricForUrl(url: string): string {
+  const key = upstreamHostKey(url);
+  return key === "leychile" ? "leychile_xml" : key;
 }
 
 export async function fetchJson<T>(
   url: string,
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<T> {
-  return metrics.time("sparql", async () => {
+  return metrics.time(metricForUrl(url), async () => {
     const response = await rawFetch(
       url,
       {
@@ -46,6 +58,7 @@ export async function fetchJson<T>(
         },
       },
       timeoutMs,
+      signal,
     );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} al consultar ${url}`);
@@ -58,10 +71,10 @@ export async function fetchText(
   url: string,
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const metricName = url.includes("leychile") ? "leychile_xml" : "websearch";
-  return metrics.time(metricName, async () => {
-    const response = await rawFetch(url, init, timeoutMs);
+  return metrics.time(metricForUrl(url), async () => {
+    const response = await rawFetch(url, init, timeoutMs, signal);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} al consultar ${url}`);
     }
@@ -74,11 +87,13 @@ export async function fetchTextWithRetry(
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
   retries = 4,
+  signal?: AbortSignal,
 ): Promise<string> {
   let lastError: unknown;
   for (let attempt = 0; attempt < retries; attempt++) {
+    throwIfAborted(signal);
     try {
-      return await fetchText(url, init, timeoutMs);
+      return await fetchText(url, init, timeoutMs, signal);
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : String(error);

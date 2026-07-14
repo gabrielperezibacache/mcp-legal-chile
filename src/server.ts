@@ -6,27 +6,39 @@ import { metrics } from "./metrics.js";
 import {
   citarTextoLegal,
   doctrineToMarkdown,
+  formatDoctrineSearchMarkdown,
   estadoNorma,
-  findArticulo,
-  findIncisoOrLiteral,
   getNorma,
   investigarTema,
   normasRelacionadas,
   normaToPlainText,
   obtenerDoctrina,
-  parseNormaTexto,
+  obtenerFalloTc,
   resolverDictamen,
+  resolverRol,
+  resolveRolToMarkdown,
   searchDictamenes,
   searchDoctrina,
+  searchDoctrinaLatam,
   searchJurisprudencia,
   searchLegislacion,
   searchTodas,
   searchTribunalConstitucional,
 } from "./sources/index.js";
+import {
+  findArticulo,
+  findIncisoOrLiteral,
+  FragmentNotFoundError,
+  parseNormaTexto,
+} from "./sources/normaTexto.js";
 import type { SearchResponse } from "./types.js";
 import { formatResultsJson } from "./util.js";
 
-const VERSION = "1.3.0";
+const VERSION = "1.7.0";
+
+const latamPaisSchema = z
+  .enum(["PE", "BR", "AR", "MX", "CO"])
+  .describe("País LATAM: PE, BR, AR, MX, CO");
 
 const limitSchema = z
   .number()
@@ -349,6 +361,9 @@ export function createServer(): McpServer {
     },
     async ({ id_norma, articulo, inciso, letra, formato }) => {
       try {
+        if (!inciso && !letra) {
+          return fail("Indica inciso o letra para obtener un fragmento.");
+        }
         const norma = await timed("obtener_inciso", () =>
           parseNormaTexto(id_norma),
         );
@@ -385,6 +400,9 @@ export function createServer(): McpServer {
           ].join("\n"),
         );
       } catch (error) {
+        if (error instanceof FragmentNotFoundError) {
+          return fail(error.message);
+        }
         return fail(
           `Error obtener_inciso: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -455,6 +473,9 @@ export function createServer(): McpServer {
         }
         return okText(quote.markdown);
       } catch (error) {
+        if (error instanceof FragmentNotFoundError) {
+          return fail(error.message);
+        }
         return fail(
           `Error citar_texto_legal: ${error instanceof Error ? error.message : String(error)}`,
         );
@@ -465,19 +486,32 @@ export function createServer(): McpServer {
   server.registerTool(
     "obtener_doctrina",
     {
-      title: "Obtener doctrina por DOI / OpenAlex",
+      title: "Obtener doctrina por SciELO / DOI / OpenAlex",
       description:
-        "Recupera una obra doctrinal con cita chilena, APA, abstract y enlaces DOI/PDF.",
+        "Recupera una obra doctrinal con cita chilena, APA, abstract y enlaces SciELO/DOI/PDF.",
       inputSchema: {
         doi: z.string().optional(),
         openalex_id: z.string().optional(),
+        scielo_pid: z
+          .string()
+          .optional()
+          .describe("PID SciELO, ej. S0718-34372012000300019"),
+        collection: z
+          .enum(["chl", "scl", "arg", "mex", "per", "col"])
+          .optional()
+          .describe("Colección ArticleMeta SciELO (chl, scl, arg, mex, per, col)"),
         formato: formatoSchema,
       },
     },
-    async ({ doi, openalex_id, formato }) => {
+    async ({ doi, openalex_id, scielo_pid, collection, formato }) => {
       try {
         const d = await timed("obtener_doctrina", () =>
-          obtenerDoctrina({ doi, openAlexId: openalex_id }),
+          obtenerDoctrina({
+            doi,
+            openAlexId: openalex_id,
+            scieloPid: scielo_pid,
+            collection,
+          }),
         );
         if (formato === "json") return okText(formatResultsJson(d));
         return okText(doctrineToMarkdown(d));
@@ -535,7 +569,8 @@ export function createServer(): McpServer {
     "buscar_tc",
     {
       title: "Buscar Tribunal Constitucional",
-      description: "Búsqueda acotada a tribunalconstitucional.cl (link_only).",
+      description:
+        "API oficial buscador.tcchile.cl: metadatos, PDF y extracto. Usa obtener_fallo_tc para blockquote.",
       inputSchema: {
         consulta: z.string().min(2),
         limite: limitSchema,
@@ -559,11 +594,64 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
+    "resolver_rol",
+    {
+      title: "Resolver ROL a enlaces oficiales",
+      description:
+        "Dado ROL (+ tribunal opcional): portales PJUD/TC y candidatos. TC vía API buscador.tcchile.cl.",
+      inputSchema: {
+        rol: z.string().min(3).describe("Ej. 9666-2020 o 12345-2020"),
+        tribunal: z.string().optional(),
+        anio: z.string().optional(),
+        limite: limitSchema,
+        formato: formatoSchema,
+      },
+    },
+    async ({ rol, tribunal, anio, limite, formato }) => {
+      try {
+        const data = await timed("resolver_rol", () =>
+          resolverRol({ rol, tribunal, anio, limite }),
+        );
+        if (formato === "json") return okText(formatResultsJson(data));
+        return okText(resolveRolToMarkdown(data));
+      } catch (error) {
+        return fail(
+          `Error resolver_rol: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "obtener_fallo_tc",
+    {
+      title: "Obtener fallo del Tribunal Constitucional",
+      description:
+        "Metadatos + extracto/doctrina + blockquote desde buscador oficial TC (PDF enlazado).",
+      inputSchema: {
+        rol: z.string().min(3).describe("ROL TC, ej. 9666-20 o 9666-2020"),
+        formato: formatoSchema,
+      },
+    },
+    async ({ rol, formato }) => {
+      try {
+        const pack = await timed("obtener_fallo_tc", () => obtenerFalloTc(rol));
+        if (formato === "json") return okText(formatResultsJson(pack));
+        return okText(pack.markdown);
+      } catch (error) {
+        return fail(
+          `Error obtener_fallo_tc: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
     "buscar_doctrina",
     {
       title: "Buscar doctrina jurídica chilena",
       description:
-        "OpenAlex + Crossref con citas formales Chile/APA, DOI, abstract y PDF si existe.",
+        "SciELO Chile (revistas jurídicas) + OpenAlex + Crossref con citas Chile/APA, DOI, abstract y PDF.",
       inputSchema: {
         consulta: z.string().min(2),
         limite: limitSchema,
@@ -578,38 +666,47 @@ export function createServer(): McpServer {
         if (formato === "json") {
           return okSearch(data, "json");
         }
-        const lines: string[] = [
-          `## Doctrina — ${consulta}`,
-          "",
-          "_Fuente no vinculante. Contrastar con texto oficial de LeyChile._",
-          "",
-        ];
-        for (const [i, r] of data.results.entries()) {
-          lines.push(`### ${i + 1}. ${r.title}`);
-          lines.push(`- **Cita (Chile):** ${r.citation}`);
-          if (r.metadata?.citationApa) {
-            lines.push(`- **Cita (APA):** ${String(r.metadata.citationApa)}`);
-          }
-          if (r.date) lines.push(`- **Año:** ${r.date}`);
-          if (r.publisher) lines.push(`- **Revista:** ${r.publisher}`);
-          if (r.id) lines.push(`- **DOI/ID:** ${r.id}`);
-          lines.push(`- **URL:** ${r.url}`);
-          if (r.secondaryUrl) lines.push(`- **PDF:** ${r.secondaryUrl}`);
-          lines.push("");
-          if (r.summary) {
-            lines.push("**Extracto:**", "", `> ${r.summary}`, "");
-          }
-        }
-        if (data.warnings?.length) {
-          lines.push(
-            "### Advertencias",
-            ...data.warnings.map((w) => `- ${w}`),
-          );
-        }
-        return okText(lines.join("\n"));
+        return okText(
+          formatDoctrineSearchMarkdown(data, `Doctrina — ${consulta}`),
+        );
       } catch (error) {
         return fail(
           `Error doctrina: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "buscar_doctrina_latam",
+    {
+      title: "Buscar doctrina jurídica LATAM",
+      description:
+        "Revistas de referencia por país (PE, BR, AR, MX, CO): catálogo ISSN + OpenAlex + enlaces SciELO/OJS.",
+      inputSchema: {
+        consulta: z.string().min(2),
+        pais: latamPaisSchema,
+        limite: limitSchema,
+        formato: formatoSchema,
+      },
+    },
+    async ({ consulta, pais, limite, formato }) => {
+      try {
+        const data = await timed("buscar_doctrina_latam", () =>
+          searchDoctrinaLatam(consulta, limite, pais),
+        );
+        if (formato === "json") {
+          return okSearch(data, "json");
+        }
+        return okText(
+          formatDoctrineSearchMarkdown(
+            data,
+            `Doctrina ${pais} — ${consulta}`,
+          ),
+        );
+      } catch (error) {
+        return fail(
+          `Error doctrina LATAM: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     },
@@ -737,11 +834,14 @@ export function createServer(): McpServer {
             obtener_inciso: "full_text heurístico",
             citar_texto_legal: "full_text + cita formal + blockquote",
             buscar_legislacion: "metadata BCN",
-            buscar_jurisprudencia: "link_only",
-            buscar_tc: "link_only",
+            buscar_jurisprudencia: "PJUD link_only",
+            buscar_tc: "TC API metadata + PDF",
+            resolver_rol: "portales + TC API / PJUD search",
+            obtener_fallo_tc: "TC extracto + blockquote oficial",
             buscar_dictamenes: "link_only",
-            buscar_doctrina: "metadata + abstract + cita Chile/APA",
-            obtener_doctrina: "metadata + abstract + cita Chile/APA",
+            buscar_doctrina: "SciELO Chile (22 rev.) + OpenAlex + Crossref",
+            buscar_doctrina_latam: "Catálogo ISSN PE/BR/AR/MX/CO + OpenAlex",
+            obtener_doctrina: "ArticleMeta SciELO multi-país / DOI / OpenAlex",
           },
           slo: metrics.snapshot().slo,
           guidance: [
@@ -844,7 +944,7 @@ export function createServer(): McpServer {
               `Hechos preliminares: ${hechos}`,
               "Checklist: (1) art. 20 CPR vía obtener_articulo idNorma 242302",
               "(2) garantías involucradas art. 19",
-              "(3) buscar_jurisprudencia / buscar_tc sobre la garantía",
+              "(3) buscar_jurisprudencia (PJUD link_only) o buscar_tc; si hay ROL TC usar obtener_fallo_tc",
               "(4) lista de pruebas y plazos — sin inventar jurisprudencia",
             ].join("\n"),
           },

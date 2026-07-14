@@ -55,11 +55,11 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "mcp-legal-chile", version: VERSION });
 });
 
-app.get("/metrics", (_req, res) => {
+app.get("/metrics", async (_req, res) => {
   res.json({
-    ...metrics.snapshot(),
+    ...metrics.snapshot(VERSION),
     upstream: upstreamStatus(),
-    quotas: quotaSnapshot(),
+    quotas: await quotaSnapshot(),
   });
 });
 
@@ -113,7 +113,7 @@ async function handleMcp(
       req.body.params.name,
     );
 
-  const auth = authorizeRequest(
+  const auth = await authorizeRequest(
     req.header("authorization") ?? undefined,
     expensive ? "expensive" : "cheap",
   );

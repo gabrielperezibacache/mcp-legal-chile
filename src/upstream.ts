@@ -1,6 +1,13 @@
 import { metrics } from "./metrics.js";
 
-type HostKey = "leychile" | "bcn" | "default";
+export type HostKey =
+  | "leychile"
+  | "bcn"
+  | "tc"
+  | "openalex"
+  | "crossref"
+  | "scielo"
+  | "websearch";
 
 interface CircuitState {
   failures: number;
@@ -8,38 +15,56 @@ interface CircuitState {
   last429At: number | null;
 }
 
+function makeCircuit(): CircuitState {
+  return { failures: 0, openedAt: null, last429At: null };
+}
+
 const circuits: Record<HostKey, CircuitState> = {
-  leychile: { failures: 0, openedAt: null, last429At: null },
-  bcn: { failures: 0, openedAt: null, last429At: null },
-  default: { failures: 0, openedAt: null, last429At: null },
+  leychile: makeCircuit(),
+  bcn: makeCircuit(),
+  tc: makeCircuit(),
+  openalex: makeCircuit(),
+  crossref: makeCircuit(),
+  scielo: makeCircuit(),
+  websearch: makeCircuit(),
 };
 
 const queues: Record<HostKey, Promise<unknown>> = {
   leychile: Promise.resolve(),
   bcn: Promise.resolve(),
-  default: Promise.resolve(),
+  tc: Promise.resolve(),
+  openalex: Promise.resolve(),
+  crossref: Promise.resolve(),
+  scielo: Promise.resolve(),
+  websearch: Promise.resolve(),
 };
 
 const MIN_INTERVAL_MS: Record<HostKey, number> = {
   leychile: Number(process.env.LEYCHILE_MIN_INTERVAL_MS ?? 1000),
   bcn: Number(process.env.BCN_MIN_INTERVAL_MS ?? 400),
-  default: 100,
+  tc: Number(process.env.TC_MIN_INTERVAL_MS ?? 200),
+  openalex: Number(process.env.OPENALEX_MIN_INTERVAL_MS ?? 150),
+  crossref: Number(process.env.CROSSREF_MIN_INTERVAL_MS ?? 150),
+  scielo: Number(process.env.SCIELO_MIN_INTERVAL_MS ?? 200),
+  websearch: Number(process.env.WEBSEARCH_MIN_INTERVAL_MS ?? 100),
 };
 
 const CIRCUIT_OPEN_MS = Number(process.env.CIRCUIT_OPEN_MS ?? 90_000);
 const CIRCUIT_THRESHOLD = Number(process.env.CIRCUIT_THRESHOLD ?? 3);
 
-function hostKey(url: string): HostKey {
+export function upstreamHostKey(url: string): HostKey {
   try {
-    const host = new URL(url).hostname;
-    if (host.includes("leychile.cl") || host.includes("bcn.cl")) {
-      if (host.includes("datos.bcn.cl")) return "bcn";
-      if (host.includes("leychile") || host.includes("bcn.cl")) return "leychile";
-    }
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.includes("datos.bcn.cl")) return "bcn";
+    if (host.includes("leychile") || host.includes("bcn.cl")) return "leychile";
+    if (host.includes("tcchile.cl")) return "tc";
+    if (host.includes("openalex.org")) return "openalex";
+    if (host.includes("crossref.org")) return "crossref";
+    if (host.includes("scielo")) return "scielo";
   } catch {
     /* ignore */
   }
-  return "default";
+  return "websearch";
 }
 
 export class CircuitOpenError extends Error {
@@ -88,7 +113,7 @@ export async function withUpstreamLimit<T>(
   url: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const key = hostKey(url);
+  const key = upstreamHostKey(url);
   assertCircuit(key);
 
   const run = queues[key].then(async () => {
