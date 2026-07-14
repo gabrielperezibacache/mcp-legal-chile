@@ -84,8 +84,7 @@ export async function searchDoctrina(
 
   const params = new URLSearchParams({
     search: enriched,
-    filter:
-      "authorships.institutions.country_code:CL,type:article|type:review|type:book-chapter",
+    filter: "authorships.institutions.country_code:CL",
     "per-page": String(Math.min(Math.max(limit, 1), 25)),
     sort: "relevance_score:desc",
   });

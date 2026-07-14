@@ -1,11 +1,13 @@
 export const USER_AGENT =
   process.env.USER_AGENT ??
-  "MCP-Legal-Chile/1.0 (conector MCP; contacto: mcp-legal-chile)";
+  "MCP-Legal-Chile/1.0 (conector MCP; https://mcp-legal-chile.onrender.com)";
+
+const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS ?? 45_000);
 
 export async function fetchJson<T>(
   url: string,
   init: RequestInit = {},
-  timeoutMs = 25_000,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -31,7 +33,7 @@ export async function fetchJson<T>(
 export async function fetchText(
   url: string,
   init: RequestInit = {},
-  timeoutMs = 25_000,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

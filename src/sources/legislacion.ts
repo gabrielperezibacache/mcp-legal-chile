@@ -6,6 +6,7 @@ import {
 } from "../util.js";
 
 const SPARQL_ENDPOINT = "https://datos.bcn.cl/sparql";
+const SPARQL_TIMEOUT_MS = Number(process.env.SPARQL_TIMEOUT_MS ?? 60_000);
 
 interface SparqlBinding {
   [key: string]: { type: string; value: string; datatype?: string };
@@ -14,6 +15,29 @@ interface SparqlBinding {
 interface SparqlResponse {
   results: { bindings: SparqlBinding[] };
 }
+
+const STOPWORDS = new Set([
+  "ley",
+  "dl",
+  "dfl",
+  "dto",
+  "decreto",
+  "sobre",
+  "para",
+  "con",
+  "del",
+  "de",
+  "la",
+  "las",
+  "los",
+  "el",
+  "una",
+  "uno",
+  "y",
+  "o",
+  "en",
+  "por",
+]);
 
 function bindingValue(b: SparqlBinding, key: string): string | undefined {
   return b[key]?.value;
@@ -62,75 +86,99 @@ function toCitation(b: SparqlBinding): CitationResult | null {
   };
 }
 
+async function runSparql(sparql: string): Promise<SparqlResponse> {
+  return fetchJson<SparqlResponse>(
+    SPARQL_ENDPOINT,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/sparql-results+json",
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({ query: sparql }),
+    },
+    SPARQL_TIMEOUT_MS,
+  );
+}
+
+function extractLawNumber(query: string): string | undefined {
+  const dotted = query.match(/\b(\d{1,2})\.(\d{3})\b/);
+  if (dotted) return `${dotted[1]}${dotted[2]}`;
+  const plain = query.match(/\b(\d{4,6})\b/);
+  return plain?.[1];
+}
+
+function searchTerms(query: string): string[] {
+  return query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/[^\p{L}\p{N}.-]/gu, ""))
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t))
+    .slice(0, 4);
+}
+
+function bindingsToResults(
+  bindings: SparqlBinding[],
+  limit: number,
+): CitationResult[] {
+  return uniqueByUrl(
+    bindings.map(toCitation).filter((r): r is CitationResult => r !== null),
+  ).slice(0, limit);
+}
+
 export async function searchLegislacion(
   query: string,
   limit = 8,
 ): Promise<SearchResponse> {
-  const terms = query
-    .trim()
-    .split(/\s+/)
-    .filter((t) => t.length > 2)
-    .slice(0, 6)
-    .map((t) => t.toLowerCase());
+  const lawNumber = extractLawNumber(query);
+  if (lawNumber) {
+    const byNumber = await getNorma({ number: lawNumber });
+    if (byNumber.results.length > 0) {
+      return { ...byNumber, query };
+    }
+  }
 
+  const terms = searchTerms(query);
   if (terms.length === 0) {
     return {
       query,
       source: "legislacion",
       results: [],
-      warnings: ["La consulta es demasiado corta."],
+      warnings: ["La consulta es demasiado corta o genérica."],
+      searchUrls: {
+        leyChile: `https://www.bcn.cl/leychile/consulta/buscador?termino=${encodeURIComponent(query)}`,
+      },
     };
   }
 
+  // Prefer a lean query: title match + key fields only (faster on BCN).
   const filters = terms
     .map(
       (t) =>
-        `FILTER(CONTAINS(LCASE(STR(?title)), "${escapeSparqlString(t)}") || CONTAINS(LCASE(STR(?label)), "${escapeSparqlString(t)}"))`,
+        `FILTER(CONTAINS(LCASE(STR(?title)), "${escapeSparqlString(t)}"))`,
     )
     .join("\n  ");
 
   const sparql = `
 PREFIX bcnnorms: <http://datos.bcn.cl/ontologies/bcn-norms#>
-PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX dc: <http://purl.org/dc/elements/1.1/>
 
-SELECT DISTINCT ?norma ?title ?label ?number ?date ?code ?tipoNombre ?organismo
+SELECT DISTINCT ?norma ?title ?number ?date ?code
 WHERE {
   ?norma a bcnnorms:Norm .
-  OPTIONAL { ?norma dc:title ?title }
-  OPTIONAL { ?norma rdfs:label ?label }
+  ?norma dc:title ?title .
   OPTIONAL { ?norma bcnnorms:hasNumber ?number }
   OPTIONAL { ?norma bcnnorms:publishDate ?date }
   OPTIONAL { ?norma bcnnorms:leychileCode ?code }
-  OPTIONAL {
-    ?norma bcnnorms:type ?tipo .
-    ?tipo bcnnorms:hasName ?tipoNombre .
-  }
-  OPTIONAL {
-    ?norma bcnnorms:createdBy ?org .
-    ?org rdfs:label ?organismo .
-  }
   ${filters}
 }
 ORDER BY DESC(?date)
-LIMIT ${Math.min(Math.max(limit * 2, 10), 40)}
+LIMIT ${Math.min(Math.max(limit * 3, 12), 30)}
 `.trim();
 
-  const body = new URLSearchParams({ query: sparql });
-  const data = await fetchJson<SparqlResponse>(SPARQL_ENDPOINT, {
-    method: "POST",
-    headers: {
-      Accept: "application/sparql-results+json",
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-  });
-
-  const results = uniqueByUrl(
-    data.results.bindings
-      .map(toCitation)
-      .filter((r): r is CitationResult => r !== null),
-  ).slice(0, limit);
+  const data = await runSparql(sparql);
+  const results = bindingsToResults(data.results.bindings, limit);
 
   return {
     query,
@@ -143,7 +191,7 @@ LIMIT ${Math.min(Math.max(limit * 2, 10), 40)}
     warnings:
       results.length === 0
         ? [
-            "No se encontraron normas en el endpoint SPARQL de la BCN. Prueba con términos más específicos (p. ej. número de ley).",
+            "No se encontraron normas en el endpoint SPARQL de la BCN. Prueba con el número de ley (p. ej. 19628).",
           ]
         : undefined,
   };
@@ -182,20 +230,8 @@ WHERE {
 LIMIT 5
 `.trim();
 
-    const data = await fetchJson<SparqlResponse>(SPARQL_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Accept: "application/sparql-results+json",
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({ query: sparql }),
-    });
-
-    const results = uniqueByUrl(
-      data.results.bindings
-        .map(toCitation)
-        .filter((r): r is CitationResult => r !== null),
-    );
+    const data = await runSparql(sparql);
+    const results = bindingsToResults(data.results.bindings, 5);
 
     return {
       query: `idNorma=${code}`,
@@ -208,8 +244,58 @@ LIMIT 5
   }
 
   if (opts.number) {
-    return searchLegislacion(`ley ${opts.number}`, 5);
+    const number = opts.number.replace(/\D/g, "");
+    const sparql = `
+PREFIX bcnnorms: <http://datos.bcn.cl/ontologies/bcn-norms#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+
+SELECT DISTINCT ?norma ?title ?label ?number ?date ?code ?tipoNombre ?organismo
+WHERE {
+  ?norma a bcnnorms:Norm .
+  ?norma bcnnorms:hasNumber ?number .
+  FILTER(STR(?number) = "${escapeSparqlString(number)}" || STR(?number) = "${escapeSparqlString(opts.number)}")
+  OPTIONAL { ?norma dc:title ?title }
+  OPTIONAL { ?norma rdfs:label ?label }
+  OPTIONAL { ?norma bcnnorms:publishDate ?date }
+  OPTIONAL { ?norma bcnnorms:leychileCode ?code }
+  OPTIONAL {
+    ?norma bcnnorms:type ?tipo .
+    ?tipo bcnnorms:hasName ?tipoNombre .
+  }
+  OPTIONAL {
+    ?norma bcnnorms:createdBy ?org .
+    ?org rdfs:label ?organismo .
+  }
+}
+ORDER BY DESC(?date)
+LIMIT 10
+`.trim();
+
+    const data = await runSparql(sparql);
+    const results = bindingsToResults(data.results.bindings, 8);
+    return {
+      query: `número=${opts.number}`,
+      source: "legislacion",
+      results,
+      searchUrls: {
+        leyChile: `https://www.bcn.cl/leychile/consulta/buscador?termino=${encodeURIComponent(opts.number)}`,
+      },
+      warnings:
+        results.length === 0
+          ? [`No se encontró norma con número ${opts.number} en BCN.`]
+          : undefined,
+    };
   }
 
-  return searchLegislacion(opts.query ?? "", 8);
+  if (opts.query) {
+    return searchLegislacion(opts.query, 8);
+  }
+
+  return {
+    query: "",
+    source: "legislacion",
+    results: [],
+    warnings: ["Indica id_norma, numero o consulta."],
+  };
 }
