@@ -49,7 +49,7 @@ const app = createMcpExpressApp({
 app.use(express.static(PUBLIC_DIR));
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true, service: "mcp-legal-chile", version: "1.0.0" });
+  res.json({ ok: true, service: "mcp-legal-chile", version: "1.1.0" });
 });
 
 app.get("/.well-known/mcp.json", (_req, res) => {
@@ -63,7 +63,7 @@ app.get("/.well-known/mcp.json", (_req, res) => {
     description:
       "Derecho chileno para asistentes de IA: legislación, jurisprudencia, doctrina y dictámenes con citas verificables.",
     url: `${base}/mcp`,
-    version: "1.0.0",
+    version: "1.1.0",
   });
 });
 

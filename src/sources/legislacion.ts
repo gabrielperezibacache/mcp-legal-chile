@@ -1,4 +1,5 @@
 import type { CitationResult, SearchResponse } from "../types.js";
+import { sparqlCache } from "../cache.js";
 import {
   escapeSparqlString,
   fetchJson,
@@ -87,17 +88,20 @@ function toCitation(b: SparqlBinding): CitationResult | null {
 }
 
 async function runSparql(sparql: string): Promise<SparqlResponse> {
-  return fetchJson<SparqlResponse>(
-    SPARQL_ENDPOINT,
-    {
-      method: "POST",
-      headers: {
-        Accept: "application/sparql-results+json",
-        "Content-Type": "application/x-www-form-urlencoded",
+  const key = `sparql:${sparql.replace(/\s+/g, " ").trim()}`;
+  return sparqlCache.getOrSet(key, () =>
+    fetchJson<SparqlResponse>(
+      SPARQL_ENDPOINT,
+      {
+        method: "POST",
+        headers: {
+          Accept: "application/sparql-results+json",
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ query: sparql }),
       },
-      body: new URLSearchParams({ query: sparql }),
-    },
-    SPARQL_TIMEOUT_MS,
+      SPARQL_TIMEOUT_MS,
+    ),
   );
 }
 

@@ -12,6 +12,12 @@ export {
   searchLegislacion,
 };
 
+export {
+  findArticulo,
+  normaToPlainText,
+  parseNormaTexto,
+} from "./normaTexto.js";
+
 export async function searchTodas(
   query: string,
   limitPerSource = 4,

@@ -1,7 +1,8 @@
 import type { CitationResult } from "../types.js";
+import { webCache } from "../cache.js";
 import { fetchText, stripHtml, uniqueByUrl } from "../util.js";
 
-interface WebHit {
+export interface WebHit {
   title: string;
   url: string;
   snippet?: string;
@@ -29,7 +30,6 @@ function extractDuckDuckGoHits(html: string): WebHit[] {
     hits.push({ title, url, snippet: snippet || undefined });
   }
 
-  // Fallback: uddg links if structured parse failed
   if (hits.length === 0) {
     const linkRe = /uddg=([^&"]+)/g;
     const seen = new Set<string>();
@@ -50,14 +50,17 @@ export async function searchWeb(
 ): Promise<WebHit[]> {
   const limit = opts.limit ?? 8;
   const q = opts.site ? `${query} site:${opts.site}` : query;
-  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
-  const html = await fetchText(url, {
-    headers: {
-      Accept: "text/html",
-      "Accept-Language": "es-CL,es;q=0.9",
-    },
+  const cacheKey = `web:${q}:${limit}`;
+  return webCache.getOrSet(cacheKey, async () => {
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+    const html = await fetchText(url, {
+      headers: {
+        Accept: "text/html",
+        "Accept-Language": "es-CL,es;q=0.9",
+      },
+    });
+    return uniqueByUrl(extractDuckDuckGoHits(html)).slice(0, limit);
   });
-  return uniqueByUrl(extractDuckDuckGoHits(html)).slice(0, limit);
 }
 
 export function webHitsToCitations(
