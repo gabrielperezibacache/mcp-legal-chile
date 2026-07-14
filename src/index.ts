@@ -11,11 +11,39 @@ const PORT = Number(process.env.PORT ?? 3000);
 const HOST = process.env.HOST ?? "0.0.0.0";
 const PUBLIC_DIR = path.resolve(__dirname, "../public");
 
+/** Hostnames Render and local clients may send (DNS rebinding guard). */
+function allowedHosts(): string[] | undefined {
+  const configured = process.env.ALLOWED_HOSTS?.split(",")
+    .map((h) => h.trim())
+    .filter(Boolean);
+  const renderHost = process.env.RENDER_EXTERNAL_HOSTNAME?.trim();
+  const fromPublic = (() => {
+    const base = process.env.PUBLIC_BASE_URL;
+    if (!base) return undefined;
+    try {
+      return new URL(base).hostname;
+    } catch {
+      return undefined;
+    }
+  })();
+  const hosts = [
+    ...(configured ?? []),
+    ...(renderHost ? [renderHost] : []),
+    ...(fromPublic ? [fromPublic] : []),
+    "localhost",
+    "127.0.0.1",
+  ];
+  const unique = [...new Set(hosts)];
+  // When binding on all interfaces without an explicit allowlist, skip Host checks.
+  if (HOST === "0.0.0.0" || HOST === "::") {
+    return unique.length > 2 ? unique : undefined;
+  }
+  return unique;
+}
+
 const app = createMcpExpressApp({
   host: HOST,
-  allowedHosts: process.env.ALLOWED_HOSTS?.split(",")
-    .map((h) => h.trim())
-    .filter(Boolean),
+  allowedHosts: allowedHosts(),
 });
 
 app.use(express.static(PUBLIC_DIR));
@@ -25,8 +53,10 @@ app.get("/health", (_req, res) => {
 });
 
 app.get("/.well-known/mcp.json", (_req, res) => {
+  const renderUrl = process.env.RENDER_EXTERNAL_URL?.replace(/\/$/, "");
   const base =
     process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") ||
+    renderUrl ||
     `http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}`;
   res.json({
     name: "MCP Legal Chile",

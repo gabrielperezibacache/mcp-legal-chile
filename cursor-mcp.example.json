@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcp-legal-chile": {
+      "command": "npx",
+      "args": ["tsx", "/ABSOLUTE/PATH/TO/MCP Legal/src/stdio.ts"]
+    }
+  }
+}
