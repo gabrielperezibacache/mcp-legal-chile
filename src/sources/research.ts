@@ -70,16 +70,18 @@ export async function investigarTema(
       : undefined;
   const idNorma = hot?.idNorma ?? idFromLeg;
   if (idNorma && articulo) {
-    sections.push("", "## 1.b Texto de artículo (oficial LeyChile)");
+    sections.push("", "## 1.b Texto legal citado (oficial LeyChile)");
     try {
       const norma = await parseNormaTexto(String(idNorma));
       const art = findArticulo(norma, articulo);
       if (art) {
         sections.push(
-          `**${norma.tipo ?? "Norma"} ${norma.numero}, art. ${art.numero}**`,
+          `**${norma.tipo ?? "Norma"} ${norma.numero}, art. ${art.numero}** — ${norma.titulo}`,
           art.url,
           "",
-          art.texto,
+          ...art.texto.split(/(?<=\.)\s+/).map((line) => `> ${line}`),
+          "",
+          `_Cita sugerida: ${norma.tipo ?? "Norma"} N° ${norma.numero}, art. ${art.numero}._`,
         );
       } else {
         sections.push(
@@ -98,7 +100,7 @@ export async function investigarTema(
   } else if (idNorma) {
     sections.push(
       "",
-      `_Norma candidata idNorma=${idNorma}. Usa obtener_articulo / obtener_texto_norma para el cuerpo._`,
+      `_Norma candidata idNorma=${idNorma}. Usa citar_texto_legal / obtener_articulo para el cuerpo._`,
     );
   }
 
@@ -117,15 +119,27 @@ export async function investigarTema(
       sections.push("- Sin hallazgos.");
       return;
     }
-    for (const r of result.value.results) {
-      const ids = [
-        r.rol ? `ROL ${r.rol}` : null,
-        r.tribunal,
-        r.evidence ? `evidencia=${r.evidence}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ");
-      sections.push(`- **${r.title}**${ids ? ` (${ids})` : ""} — ${r.url}`);
+        for (const r of result.value.results) {
+      if (label === "doctrina") {
+        sections.push(`- **${r.title}**`);
+        sections.push(`  - Cita: ${r.citation}`);
+        if (r.metadata?.citationApa) {
+          sections.push(`  - APA: ${String(r.metadata.citationApa)}`);
+        }
+        sections.push(`  - URL: ${r.url}`);
+        if (r.summary) {
+          sections.push(`  - Extracto: ${String(r.summary).slice(0, 280)}…`);
+        }
+      } else {
+        const ids = [
+          r.rol ? `ROL ${r.rol}` : null,
+          r.tribunal,
+          r.evidence ? `evidencia=${r.evidence}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        sections.push(`- **${r.title}**${ids ? ` (${ids})` : ""} — ${r.url}`);
+      }
     }
     if (result.value.warnings?.length) {
       sections.push(

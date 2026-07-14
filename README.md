@@ -9,8 +9,8 @@ Conector **MCP** de derecho chileno para Claude, Cursor y apps compatibles.
 
 | Tool | Evidencia | Fuente |
 |---|---|---|
-| `obtener_articulo` / `obtener_texto_norma` / `obtener_inciso` | **Texto íntegro** | XML oficial LeyChile |
-| `buscar_legislacion` / `obtener_norma` / `estado_norma` | Metadata | BCN SPARQL |
+| `citar_texto_legal` | **Texto íntegro + cita** | XML LeyChile en blockquote |
+| `buscar_doctrina` / `obtener_doctrina` | Metadata + abstract + **citas Chile/APA** | OpenAlex + Crossref |
 | `buscar_jurisprudencia` / `buscar_tc` | **Solo enlace** | PJUD / TC (vía búsqueda) |
 | `buscar_dictamenes` / `resolver_dictamen` | **Solo enlace** | Contraloría |
 | `buscar_doctrina` | Metadata académica | OpenAlex |

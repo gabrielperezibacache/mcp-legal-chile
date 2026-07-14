@@ -1,6 +1,11 @@
 import type { SearchResponse } from "../types.js";
-import { searchDictamenes, resolverDictamen } from "./dictamenes.js";
+export {
+  doctrineToMarkdown,
+  obtenerDoctrina,
+  searchDoctrina,
+} from "./doctrina.js";
 import { searchDoctrina } from "./doctrina.js";
+import { searchDictamenes, resolverDictamen } from "./dictamenes.js";
 import {
   searchJurisprudencia,
   searchTribunalConstitucional,
@@ -11,16 +16,17 @@ import {
   normasRelacionadas,
   searchLegislacion,
 } from "./legislacion.js";
+import { citarTextoLegal } from "./legalQuote.js";
 import { investigarTema } from "./research.js";
 
 export {
+  citarTextoLegal,
   estadoNorma,
   getNorma,
   investigarTema,
   normasRelacionadas,
   resolverDictamen,
   searchDictamenes,
-  searchDoctrina,
   searchJurisprudencia,
   searchLegislacion,
   searchTribunalConstitucional,

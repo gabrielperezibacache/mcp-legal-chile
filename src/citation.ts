@@ -10,6 +10,12 @@ export interface ChileanCitationInput {
   anio?: string;
   titulo?: string;
   url?: string;
+  /** Doctrine fields */
+  autores?: string;
+  revista?: string;
+  doi?: string;
+  volumen?: string;
+  pagina?: string;
 }
 
 /** Format citations for Chilean legal writing from already-fetched identifiers. */
@@ -32,6 +38,37 @@ export function formatChileanCitation(input: ChileanCitationInput): {
         input.url ??
         "https://www.contraloria.cl/web/cgr/dictamenes-y-pronunciamientos-juridicos",
       notes,
+    };
+  }
+
+  if (input.autores || input.doi || input.revista) {
+    const authors = input.autores ?? "s/a";
+    const year = input.anio ? `(${input.anio})` : "";
+    const title = input.titulo ? `"${input.titulo}"` : undefined;
+    const loc = [
+      input.revista,
+      input.volumen ? `vol. ${input.volumen}` : undefined,
+      input.pagina ? `pp. ${input.pagina}` : undefined,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const doi = input.doi
+      ? ` DOI: ${input.doi.replace(/^https?:\/\/doi\.org\//i, "")}`
+      : "";
+    const citation = `${authors} ${year} ${title ?? ""}${loc ? `, ${loc}` : ""}.${doi}`
+      .replace(/\s+/g, " ")
+      .trim();
+    return {
+      citation,
+      url:
+        input.url ??
+        (input.doi
+          ? `https://doi.org/${input.doi.replace(/^https?:\/\/doi\.org\//i, "")}`
+          : undefined),
+      notes: [
+        ...notes,
+        "Cita doctrinal (no vinculante). Contrastar con texto oficial de LeyChile.",
+      ],
     };
   }
 

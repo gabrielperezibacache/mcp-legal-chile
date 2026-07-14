@@ -4,6 +4,8 @@ import { formatChileanCitation } from "./citation.js";
 import { formatSearchMarkdown } from "./format.js";
 import { metrics } from "./metrics.js";
 import {
+  citarTextoLegal,
+  doctrineToMarkdown,
   estadoNorma,
   findArticulo,
   findIncisoOrLiteral,
@@ -11,6 +13,7 @@ import {
   investigarTema,
   normasRelacionadas,
   normaToPlainText,
+  obtenerDoctrina,
   parseNormaTexto,
   resolverDictamen,
   searchDictamenes,
@@ -23,7 +26,7 @@ import {
 import type { SearchResponse } from "./types.js";
 import { formatResultsJson } from "./util.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 
 const limitSchema = z
   .number()
@@ -394,7 +397,7 @@ export function createServer(): McpServer {
     {
       title: "Formatear cita chilena",
       description:
-        "Genera cadena de cita formal SOLO con identificadores ya recuperados (no inventa ROLs/dictámenes).",
+        "Genera cadena de cita formal SOLO con identificadores ya recuperados (norma, ROL, dictamen o doctrina). No inventa datos.",
       inputSchema: {
         tipo: z.string().optional(),
         numero: z.string().optional(),
@@ -407,6 +410,11 @@ export function createServer(): McpServer {
         anio: z.string().optional(),
         titulo: z.string().optional(),
         url: z.string().optional(),
+        autores: z.string().optional().describe("Autores de doctrina"),
+        revista: z.string().optional(),
+        doi: z.string().optional(),
+        volumen: z.string().optional(),
+        pagina: z.string().optional(),
       },
     },
     async (input) => {
@@ -420,6 +428,64 @@ export function createServer(): McpServer {
           .filter(Boolean)
           .join("\n"),
       );
+    },
+  );
+
+  server.registerTool(
+    "citar_texto_legal",
+    {
+      title: "Citar texto legal oficial con blockquote",
+      description:
+        "Devuelve cita formal chilena + texto oficial de LeyChile listo para pegar en un escrito (blockquote).",
+      inputSchema: {
+        id_norma: z.string().min(1),
+        articulo: z.string().min(1),
+        inciso: z.string().optional(),
+        letra: z.string().optional(),
+        formato: formatoSchema,
+      },
+    },
+    async ({ id_norma, articulo, inciso, letra, formato }) => {
+      try {
+        const quote = await timed("citar_texto_legal", () =>
+          citarTextoLegal({ id_norma, articulo, inciso, letra }),
+        );
+        if (formato === "json") {
+          return okText(formatResultsJson({ ...quote, evidence: "full_text" }));
+        }
+        return okText(quote.markdown);
+      } catch (error) {
+        return fail(
+          `Error citar_texto_legal: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "obtener_doctrina",
+    {
+      title: "Obtener doctrina por DOI / OpenAlex",
+      description:
+        "Recupera una obra doctrinal con cita chilena, APA, abstract y enlaces DOI/PDF.",
+      inputSchema: {
+        doi: z.string().optional(),
+        openalex_id: z.string().optional(),
+        formato: formatoSchema,
+      },
+    },
+    async ({ doi, openalex_id, formato }) => {
+      try {
+        const d = await timed("obtener_doctrina", () =>
+          obtenerDoctrina({ doi, openAlexId: openalex_id }),
+        );
+        if (formato === "json") return okText(formatResultsJson(d));
+        return okText(doctrineToMarkdown(d));
+      } catch (error) {
+        return fail(
+          `Error obtener_doctrina: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     },
   );
 
@@ -496,7 +562,8 @@ export function createServer(): McpServer {
     "buscar_doctrina",
     {
       title: "Buscar doctrina jurídica chilena",
-      description: "OpenAlex / revistas chilenas (metadata académica).",
+      description:
+        "OpenAlex + Crossref con citas formales Chile/APA, DOI, abstract y PDF si existe.",
       inputSchema: {
         consulta: z.string().min(2),
         limite: limitSchema,
@@ -505,12 +572,41 @@ export function createServer(): McpServer {
     },
     async ({ consulta, limite, formato }) => {
       try {
-        return okSearch(
-          await timed("buscar_doctrina", () =>
-            searchDoctrina(consulta, limite),
-          ),
-          formato,
+        const data = await timed("buscar_doctrina", () =>
+          searchDoctrina(consulta, limite),
         );
+        if (formato === "json") {
+          return okSearch(data, "json");
+        }
+        const lines: string[] = [
+          `## Doctrina — ${consulta}`,
+          "",
+          "_Fuente no vinculante. Contrastar con texto oficial de LeyChile._",
+          "",
+        ];
+        for (const [i, r] of data.results.entries()) {
+          lines.push(`### ${i + 1}. ${r.title}`);
+          lines.push(`- **Cita (Chile):** ${r.citation}`);
+          if (r.metadata?.citationApa) {
+            lines.push(`- **Cita (APA):** ${String(r.metadata.citationApa)}`);
+          }
+          if (r.date) lines.push(`- **Año:** ${r.date}`);
+          if (r.publisher) lines.push(`- **Revista:** ${r.publisher}`);
+          if (r.id) lines.push(`- **DOI/ID:** ${r.id}`);
+          lines.push(`- **URL:** ${r.url}`);
+          if (r.secondaryUrl) lines.push(`- **PDF:** ${r.secondaryUrl}`);
+          lines.push("");
+          if (r.summary) {
+            lines.push("**Extracto:**", "", `> ${r.summary}`, "");
+          }
+        }
+        if (data.warnings?.length) {
+          lines.push(
+            "### Advertencias",
+            ...data.warnings.map((w) => `- ${w}`),
+          );
+        }
+        return okText(lines.join("\n"));
       } catch (error) {
         return fail(
           `Error doctrina: ${error instanceof Error ? error.message : String(error)}`,
@@ -639,11 +735,13 @@ export function createServer(): McpServer {
             obtener_articulo: "full_text (LeyChile XML)",
             obtener_texto_norma: "full_text (LeyChile XML)",
             obtener_inciso: "full_text heurístico",
+            citar_texto_legal: "full_text + cita formal + blockquote",
             buscar_legislacion: "metadata BCN",
             buscar_jurisprudencia: "link_only",
             buscar_tc: "link_only",
             buscar_dictamenes: "link_only",
-            buscar_doctrina: "metadata académica",
+            buscar_doctrina: "metadata + abstract + cita Chile/APA",
+            obtener_doctrina: "metadata + abstract + cita Chile/APA",
           },
           slo: metrics.snapshot().slo,
           guidance: [
@@ -795,6 +893,38 @@ export function createServer(): McpServer {
           content: {
             type: "text",
             text: `Para redactar sobre "${tema}", usa investigar_tema y produce una checklist de idNorma+artículo a obtener_articulo antes de escribir.`,
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "citar_doctrina_y_norma",
+    {
+      title: "Citar doctrina + texto legal",
+      description:
+        "Combina cita doctrinal formal con blockquote del artículo oficial de LeyChile.",
+      argsSchema: {
+        tema: z.string(),
+        id_norma: z.string().optional(),
+        articulo: z.string().optional(),
+      },
+    },
+    ({ tema, id_norma, articulo }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Tema: ${tema}`,
+              "1) buscar_doctrina y, si hay DOI, obtener_doctrina",
+              id_norma && articulo
+                ? `2) citar_texto_legal id_norma=${id_norma} articulo=${articulo}`
+                : "2) buscar_legislacion y luego citar_texto_legal del artículo más pertinente",
+              "3) Entregar: (A) citas doctrinales Chile/APA (B) blockquote del texto legal (C) párrafo que las articule sin inventar.",
+            ].join("\n"),
           },
         },
       ],
