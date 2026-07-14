@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCP Legal Chile — El derecho chileno dentro de tu asistente de IA</title>
+    <meta
+      name="description"
+      content="Conector MCP para consultar legislación, jurisprudencia, doctrina y dictámenes chilenos con citas y fuentes verificables."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Source+Sans+3:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --ink: #13212e;
+        --muted: #445566;
+        --paper: #f3efe6;
+        --sand: #e7dfcf;
+        --sea: #0f4c5c;
+        --accent: #c45c26;
+        --line: rgba(19, 33, 46, 0.12);
+        --glow: rgba(15, 76, 92, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        font-family: "Source Sans 3", sans-serif;
+        background:
+          radial-gradient(1200px 600px at 10% -10%, rgba(196, 92, 38, 0.16), transparent 55%),
+          radial-gradient(900px 500px at 100% 0%, rgba(15, 76, 92, 0.18), transparent 50%),
+          linear-gradient(180deg, #efe8da 0%, var(--paper) 38%, #ebe4d6 100%);
+        min-height: 100vh;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        opacity: 0.35;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.35'/%3E%3C/svg%3E");
+        mix-blend-mode: multiply;
+      }
+
+      a {
+        color: var(--sea);
+      }
+
+      .wrap {
+        width: min(1080px, calc(100% - 2rem));
+        margin: 0 auto;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1.25rem 0 0;
+      }
+
+      .brand {
+        font-family: Fraunces, serif;
+        font-weight: 700;
+        font-size: 1.15rem;
+        letter-spacing: -0.02em;
+      }
+
+      .brand span {
+        color: var(--accent);
+      }
+
+      .nav-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        text-decoration: none;
+        color: var(--ink);
+        font-weight: 600;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.45);
+        backdrop-filter: blur(6px);
+        padding: 0.55rem 0.95rem;
+        transition: transform 180ms ease, background 180ms ease;
+      }
+
+      .nav-cta:hover {
+        transform: translateY(-1px);
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .hero {
+        padding: 4.5rem 0 3.5rem;
+        display: grid;
+        gap: 1.25rem;
+        max-width: 760px;
+        animation: rise 700ms ease both;
+      }
+
+      @keyframes rise {
+        from {
+          opacity: 0;
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .eyebrow {
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: var(--sea);
+      }
+
+      h1 {
+        margin: 0;
+        font-family: Fraunces, serif;
+        font-weight: 700;
+        font-size: clamp(2.4rem, 6vw, 4.2rem);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+
+      .lead {
+        margin: 0;
+        font-size: 1.2rem;
+        line-height: 1.55;
+        color: var(--muted);
+        max-width: 40rem;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-top: 0.5rem;
+      }
+
+      .btn {
+        appearance: none;
+        border: 0;
+        cursor: pointer;
+        text-decoration: none;
+        font: inherit;
+        font-weight: 700;
+        padding: 0.85rem 1.2rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        transition: transform 180ms ease, box-shadow 180ms ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+      }
+
+      .btn-primary {
+        background: var(--ink);
+        color: #f7f2e8;
+        box-shadow: 0 10px 30px rgba(19, 33, 46, 0.18);
+      }
+
+      .btn-ghost {
+        background: transparent;
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+
+      .url-box {
+        margin-top: 1rem;
+        padding: 1rem 1.1rem;
+        background: rgba(255, 255, 255, 0.55);
+        border: 1px solid var(--line);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+        justify-content: space-between;
+        animation: rise 900ms ease both;
+      }
+
+      .url-box code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.95rem;
+        word-break: break-all;
+      }
+
+      .copy {
+        border: 0;
+        background: var(--sea);
+        color: white;
+        font: inherit;
+        font-weight: 700;
+        padding: 0.55rem 0.9rem;
+        cursor: pointer;
+      }
+
+      section {
+        padding: 3rem 0;
+        border-top: 1px solid var(--line);
+      }
+
+      section h2 {
+        font-family: Fraunces, serif;
+        font-size: clamp(1.7rem, 3vw, 2.3rem);
+        margin: 0 0 0.6rem;
+        letter-spacing: -0.02em;
+      }
+
+      section p.section-lead {
+        margin: 0 0 1.75rem;
+        color: var(--muted);
+        max-width: 40rem;
+        line-height: 1.5;
+      }
+
+      .grid {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .source {
+        padding: 1.25rem 1.2rem;
+        background: rgba(255, 255, 255, 0.42);
+        border-left: 3px solid var(--accent);
+        animation: rise 800ms ease both;
+      }
+
+      .source:nth-child(2) {
+        border-left-color: var(--sea);
+        animation-delay: 60ms;
+      }
+      .source:nth-child(3) {
+        animation-delay: 120ms;
+      }
+      .source:nth-child(4) {
+        border-left-color: var(--sea);
+        animation-delay: 180ms;
+      }
+
+      .source h3 {
+        margin: 0 0 0.4rem;
+        font-size: 1.1rem;
+      }
+
+      .source p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .steps {
+        counter-reset: step;
+        display: grid;
+        gap: 1rem;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 1rem;
+        align-items: start;
+        padding: 1rem 0;
+      }
+
+      .step::before {
+        counter-increment: step;
+        content: counter(step);
+        width: 2rem;
+        height: 2rem;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: var(--ink);
+        color: #f7f2e8;
+        font-weight: 700;
+        font-size: 0.9rem;
+      }
+
+      .step h3 {
+        margin: 0 0 0.25rem;
+        font-size: 1.05rem;
+      }
+
+      .step p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      footer {
+        padding: 2.5rem 0 3rem;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+
+      @media (max-width: 640px) {
+        .hero {
+          padding-top: 3rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="brand">MCP Legal <span>Chile</span></div>
+        <a class="nav-cta" href="#conectar">Conectar</a>
+      </header>
+
+      <main>
+        <div class="hero">
+          <div class="eyebrow">Conector MCP</div>
+          <h1>El derecho chileno, dentro de tu asistente de IA</h1>
+          <p class="lead">
+            Conecta este servidor MCP a Claude, Cursor u otras apps compatibles.
+            Pregunta sobre derecho chileno y recibe respuestas con citas y
+            enlaces a fuentes oficiales o académicas verificables.
+          </p>
+          <div class="actions">
+            <a class="btn btn-primary" href="#conectar">Conectar ahora</a>
+            <a class="btn btn-ghost" href="/health">Estado del servicio</a>
+          </div>
+          <div class="url-box" id="conectar">
+            <div>
+              <div class="eyebrow" style="margin-bottom: 0.35rem">URL del conector</div>
+              <code id="mcp-url">https://TU-DOMINIO/mcp</code>
+            </div>
+            <button class="copy" type="button" id="copy-btn">Copiar URL</button>
+          </div>
+        </div>
+
+        <section>
+          <h2>Cuatro fuentes del derecho chileno</h2>
+          <p class="section-lead">
+            Las mismas tipologías que esperas de un conector jurídico serio,
+            expuestas como herramientas MCP para tu asistente.
+          </p>
+          <div class="grid">
+            <article class="source">
+              <h3>Legislación</h3>
+              <p>
+                Normas desde los datos abiertos de la BCN / LeyChile, con
+                enlace directo a la fuente oficial.
+              </p>
+            </article>
+            <article class="source">
+              <h3>Jurisprudencia</h3>
+              <p>
+                Referencias a sentencias del Poder Judicial y del Tribunal
+                Constitucional, con URLs para verificación.
+              </p>
+            </article>
+            <article class="source">
+              <h3>Doctrina</h3>
+              <p>
+                Artículos académicos chilenos indexados (OpenAlex / revistas
+                jurídicas) con DOI cuando existe.
+              </p>
+            </article>
+            <article class="source">
+              <h3>Dictámenes</h3>
+              <p>
+                Pronunciamientos de la administración del Estado, con enlaces
+                al portal de la Contraloría y fuentes públicas.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section>
+          <h2>Conéctalo en minutos</h2>
+          <p class="section-lead">
+            Todo ocurre en tu asistente. No necesitas instalar nada local si usas
+            un conector remoto.
+          </p>
+          <div class="steps">
+            <div class="step">
+              <div>
+                <h3>Copia la URL</h3>
+                <p>Usa el endpoint <code>/mcp</code> de este servicio.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div>
+                <h3>Añade el conector</h3>
+                <p>
+                  En Claude: Conectores → Añadir → pega la URL. En Cursor:
+                  agrega el servidor MCP remoto o local (stdio).
+                </p>
+              </div>
+            </div>
+            <div class="step">
+              <div>
+                <h3>Pregunta con fuentes</h3>
+                <p>
+                  Consulta derecho chileno. El asistente usará las herramientas
+                  y devolverá citas con enlaces.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        MCP Legal Chile no sustituye asesoría jurídica. Verifica siempre las
+        fuentes oficiales enlazadas en cada respuesta.
+      </footer>
+    </div>
+    <script>
+      const urlEl = document.getElementById("mcp-url");
+      const mcpUrl = `${window.location.origin}/mcp`;
+      urlEl.textContent = mcpUrl;
+      document.getElementById("copy-btn").addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(mcpUrl);
+          const btn = document.getElementById("copy-btn");
+          btn.textContent = "Copiado";
+          setTimeout(() => (btn.textContent = "Copiar URL"), 1500);
+        } catch {
+          prompt("Copia esta URL:", mcpUrl);
+        }
+      });
+    </script>
+  </body>
+</html>
