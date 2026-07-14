@@ -23,6 +23,7 @@ import {
 } from "./legislacion.js";
 import { citarTextoLegal } from "./legalQuote.js";
 import { investigarTema } from "./research.js";
+import { remainingMs, runWithDeadline } from "../deadline.js";
 
 export {
   citarTextoLegal,
@@ -54,26 +55,20 @@ export async function searchTodas(
 ): Promise<SearchResponse> {
   const started = Date.now();
   const pendingSources: string[] = [];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), budgetMs);
 
   const run = async <T>(
     label: string,
-    fn: () => Promise<T>,
+    fn: (signal: AbortSignal) => Promise<T>,
   ): Promise<T | null> => {
-    const remaining = budgetMs - (Date.now() - started);
+    const remaining = remainingMs(started, budgetMs);
     if (remaining < 200) {
       pendingSources.push(label);
       return null;
     }
     try {
-      return await Promise.race([
-        fn(),
-        new Promise<null>((resolve) =>
-          setTimeout(() => {
-            pendingSources.push(`${label} (timeout)`);
-            resolve(null);
-          }, remaining),
-        ),
-      ]);
+      return await runWithDeadline(label, remaining, fn, controller.signal);
     } catch (error) {
       pendingSources.push(
         `${label}: ${error instanceof Error ? error.message : String(error)}`,
@@ -82,26 +77,42 @@ export async function searchTodas(
     }
   };
 
-  const [legislacion, jurisprudencia, doctrina, dictamenes] = await Promise.all([
-    run("legislacion", () => searchLegislacion(query, limitPerSource)),
-    run("jurisprudencia", () => searchJurisprudencia(query, limitPerSource)),
-    run("doctrina", () => searchDoctrina(query, limitPerSource)),
-    run("dictamenes", () => searchDictamenes(query, limitPerSource)),
-  ]);
+  try {
+    const [legislacion, jurisprudencia, doctrina, dictamenes] =
+      await Promise.all([
+        run("legislacion", (signal) =>
+          searchLegislacion(query, limitPerSource, { signal }),
+        ),
+        run("jurisprudencia", (signal) =>
+          searchJurisprudencia(query, limitPerSource, { signal }),
+        ),
+        run("doctrina", (signal) =>
+          searchDoctrina(query, limitPerSource, { signal, fast: true }),
+        ),
+        run("dictamenes", (signal) =>
+          searchDictamenes(query, limitPerSource, { signal }),
+        ),
+      ]);
 
-  const responses = [legislacion, jurisprudencia, doctrina, dictamenes].filter(
-    (r): r is SearchResponse => r != null,
-  );
+    const responses = [
+      legislacion,
+      jurisprudencia,
+      doctrina,
+      dictamenes,
+    ].filter((r): r is SearchResponse => r != null);
 
-  return {
-    query,
-    source: "todas",
-    results: responses.flatMap((r) => r.results),
-    warnings: responses.flatMap((r) => r.warnings ?? []),
-    pendingSources: pendingSources.length ? pendingSources : undefined,
-    searchUrls: Object.assign(
-      {},
-      ...responses.map((r) => r.searchUrls ?? {}),
-    ),
-  };
+    return {
+      query,
+      source: "todas",
+      results: responses.flatMap((r) => r.results),
+      warnings: responses.flatMap((r) => r.warnings ?? []),
+      pendingSources: pendingSources.length ? pendingSources : undefined,
+      searchUrls: Object.assign(
+        {},
+        ...responses.map((r) => r.searchUrls ?? {}),
+      ),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }

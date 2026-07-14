@@ -34,7 +34,7 @@ import {
 import type { SearchResponse } from "./types.js";
 import { formatResultsJson } from "./util.js";
 
-const VERSION = "1.7.0";
+const VERSION = "1.7.1";
 
 const latamPaisSchema = z
   .enum(["PE", "BR", "AR", "MX", "CO"])
@@ -214,7 +214,7 @@ export function createServer(): McpServer {
         "XML oficial. modo=indice lista artículos; modo=cuerpo devuelve texto (truncable).",
       inputSchema: {
         id_norma: z.string().min(1),
-        max_chars: z.number().int().min(1000).max(50_000).default(12_000),
+        max_chars: z.number().int().min(1000).max(50_000).default(8_000),
         modo: z.enum(["indice", "cuerpo"]).default("cuerpo"),
         formato: formatoSchema,
       },
@@ -796,10 +796,10 @@ export function createServer(): McpServer {
     {
       title: "Pack de investigación jurídica",
       description:
-        "Orquesta legislación (+ artículo si aplica), jurisprudencia, dictámenes y doctrina en un memo markdown anti-alucinación.",
+        "Orquesta legislación/jurisprudencia/dictámenes/doctrina en ≤~12s con resultados parciales OK. No entrega texto íntegro de fallos PJUD (link_only). Para detalle: citar_texto_legal / obtener_fallo_tc.",
       inputSchema: {
         consulta: z.string().min(2),
-        limite_por_fuente: z.number().int().min(1).max(8).default(3),
+        limite_por_fuente: z.number().int().min(1).max(8).default(2),
       },
     },
     async ({ consulta, limite_por_fuente }) => {

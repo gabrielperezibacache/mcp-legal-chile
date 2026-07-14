@@ -245,12 +245,15 @@ async function searchCrossrefDoctrine(
 export async function searchDoctrina(
   query: string,
   limit = 8,
-  opts: { signal?: AbortSignal } = {},
+  opts: { signal?: AbortSignal; fast?: boolean } = {},
 ): Promise<SearchResponse> {
   throwIfAborted(opts.signal);
   const warnings: string[] = [
     "Doctrina = fuente no vinculante. Preferir texto de LeyChile para normas.",
   ];
+  if (opts.fast) {
+    warnings.push("Modo pack rápido: solo SciELO/OpenAlex (sin Crossref).");
+  }
   const records: DoctrineRecord[] = [];
 
   try {
@@ -274,7 +277,7 @@ export async function searchDoctrina(
     }
   }
 
-  if (records.length < limit) {
+  if (!opts.fast && records.length < limit) {
     throwIfAborted(opts.signal);
     try {
       records.push(

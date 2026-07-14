@@ -1,5 +1,8 @@
 import { resolveHotNorma } from "../catalog.js";
-import { runWithDeadline } from "../deadline.js";
+import {
+  remainingMs,
+  runWithDeadline,
+} from "../deadline.js";
 import type { SearchResponse } from "../types.js";
 import { normalizeRol } from "../parsers.js";
 import { searchDictamenes } from "./dictamenes.js";
@@ -42,213 +45,322 @@ function shouldFetchTcFallo(
   );
 }
 
+function truncateArticleQuote(texto: string, maxChars: number): string {
+  const clean = texto.replace(/\s+/g, " ").trim();
+  if (clean.length <= maxChars) return clean;
+  return `${clean.slice(0, maxChars)}…`;
+}
+
+function capMarkdown(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n_…respuesta truncada para no saturar el contexto. Usa obtener_articulo / citar_texto_legal / obtener_fallo_tc para detalle._`;
+}
+
+/**
+ * Pack orquestado con presupuesto global duro.
+ * Diseño: responder siempre antes de PACK_TOTAL_MS con resultados parciales OK.
+ * Evita el fallo típico de clientes MCP (~60s) por fases secuenciales sin tope.
+ */
 export async function investigarTema(
   consulta: string,
   limitePorFuente = 3,
 ): Promise<string> {
-  const timeoutMs = Number(process.env.PACK_TIMEOUT_MS ?? 8000);
+  const startedAt = Date.now();
+  const totalMs = Number(process.env.PACK_TOTAL_MS ?? 12_000);
+  const perSourceMs = Number(
+    process.env.PACK_TIMEOUT_MS ?? Math.min(6_000, Math.floor(totalMs * 0.55)),
+  );
+  const maxChars = Number(process.env.PACK_MAX_CHARS ?? 10_000);
+  const articleQuoteChars = Number(process.env.PACK_ARTICLE_CHARS ?? 1_200);
   const pending: string[] = [];
   const rolMention = extractRolMention(consulta);
   const tcMention = isTcMention(consulta);
+  const packController = new AbortController();
+  const packTimer = setTimeout(() => packController.abort(), totalMs);
 
-  const [leg, juris, doc, dict, rolRes] = await Promise.allSettled([
-    runWithDeadline("legislacion", timeoutMs, (signal) =>
-      searchLegislacion(consulta, limitePorFuente, { signal }),
-    ),
-    runWithDeadline("jurisprudencia", timeoutMs, (signal) =>
-      searchJurisprudencia(consulta, limitePorFuente, { signal }),
-    ),
-    runWithDeadline("doctrina", timeoutMs, (signal) =>
-      searchDoctrina(consulta, limitePorFuente, { signal }),
-    ),
-    runWithDeadline("dictamenes", timeoutMs, (signal) =>
-      searchDictamenes(consulta, limitePorFuente, { signal }),
-    ),
-    rolMention
-      ? runWithDeadline("resolver_rol", timeoutMs, (signal) =>
-          resolverRol({
-            rol: rolMention,
-            tribunal: tcMention ? "Tribunal Constitucional" : undefined,
-            limite: limitePorFuente,
+  try {
+    const [leg, juris, doc, dict, rolRes] = await Promise.allSettled([
+      runWithDeadline(
+        "legislacion",
+        perSourceMs,
+        (signal) =>
+          searchLegislacion(consulta, limitePorFuente, { signal }),
+        packController.signal,
+      ),
+      runWithDeadline(
+        "jurisprudencia",
+        perSourceMs,
+        (signal) =>
+          searchJurisprudencia(consulta, limitePorFuente, { signal }),
+        packController.signal,
+      ),
+      runWithDeadline(
+        "doctrina",
+        perSourceMs,
+        (signal) =>
+          searchDoctrina(consulta, limitePorFuente, {
             signal,
+            fast: true,
           }),
-        )
-      : Promise.resolve(undefined),
-  ]);
+        packController.signal,
+      ),
+      runWithDeadline(
+        "dictamenes",
+        perSourceMs,
+        (signal) =>
+          searchDictamenes(consulta, limitePorFuente, { signal }),
+        packController.signal,
+      ),
+      rolMention
+        ? runWithDeadline(
+            "resolver_rol",
+            perSourceMs,
+            (signal) =>
+              resolverRol({
+                rol: rolMention,
+                tribunal: tcMention ? "Tribunal Constitucional" : undefined,
+                limite: limitePorFuente,
+                signal,
+              }),
+            packController.signal,
+          )
+        : Promise.resolve(undefined),
+    ]);
 
-  const rolResolved =
-    rolRes.status === "fulfilled" ? rolRes.value : undefined;
-  let falloTc: Awaited<ReturnType<typeof obtenerFalloTc>> | undefined;
-  if (rolRes.status === "rejected") pending.push("resolver_rol");
-  if (rolMention && shouldFetchTcFallo(consulta, rolResolved)) {
-    try {
-      falloTc = await runWithDeadline("obtener_fallo_tc", timeoutMs, (signal) =>
-        obtenerFalloTc(rolMention, signal),
-      );
-    } catch {
-      pending.push("obtener_fallo_tc");
-    }
-  }
+    const rolResolved =
+      rolRes.status === "fulfilled" ? rolRes.value : undefined;
+    let falloTc: Awaited<ReturnType<typeof obtenerFalloTc>> | undefined;
+    if (rolRes.status === "rejected") pending.push("resolver_rol");
 
-  const sections: string[] = [
-    `# Pack de investigación — ${consulta}`,
-    "",
-    "_Usa solo las fuentes listadas. No inventes fallos, dictámenes ni artículos._",
-    "",
-  ];
-
-  sections.push("## 1. Marco normativo");
-  if (leg.status === "fulfilled" && leg.value.results.length) {
-    for (const r of leg.value.results) {
-      sections.push(
-        `- **${r.title}** — ${r.citation} — ${r.url}${r.id ? ` (idNorma ${r.id})` : ""}`,
-      );
-    }
-  } else {
-    pending.push("legislacion");
-    sections.push("- Sin resultados de legislación en el tiempo disponible.");
-  }
-
-  const articulo = extractArticuloMention(consulta);
-  const hot = resolveHotNorma(consulta);
-  const idFromLeg =
-    leg.status === "fulfilled"
-      ? leg.value.results.find((r) => r.id)?.id
-      : undefined;
-  const idNorma = hot?.idNorma ?? idFromLeg;
-  if (idNorma && articulo) {
-    sections.push("", "## 1.b Texto legal citado (oficial LeyChile)");
-    try {
-      const norma = await parseNormaTexto(String(idNorma));
-      const art = findArticulo(norma, articulo);
-      if (art) {
-        sections.push(
-          `**${norma.tipo ?? "Norma"} ${norma.numero}, art. ${art.numero}** — ${norma.titulo}`,
-          art.url,
-          "",
-          ...art.texto.split(/(?<=\.)\s+/).map((line) => `> ${line}`),
-          "",
-          `_Cita sugerida: ${norma.tipo ?? "Norma"} N° ${norma.numero}, art. ${art.numero}._`,
+    const leftForTc = remainingMs(startedAt, totalMs);
+    if (
+      rolMention &&
+      shouldFetchTcFallo(consulta, rolResolved) &&
+      leftForTc >= 2_000
+    ) {
+      try {
+        falloTc = await runWithDeadline(
+          "obtener_fallo_tc",
+          Math.min(4_000, leftForTc - 200),
+          (signal) => obtenerFalloTc(rolMention, signal),
+          packController.signal,
         );
-      } else {
-        sections.push(
-          `No se encontró art. ${articulo}. Índice: ${norma.articulos
-            .map((a) => a.numero)
-            .slice(0, 20)
-            .join(", ")}`,
-        );
+      } catch {
+        pending.push("obtener_fallo_tc");
       }
-    } catch (error) {
-      sections.push(
-        `No se pudo traer el XML (${error instanceof Error ? error.message : String(error)}).`,
-        `URL: https://www.bcn.cl/leychile/navegar?idNorma=${idNorma}`,
-      );
+    } else if (
+      rolMention &&
+      shouldFetchTcFallo(consulta, rolResolved)
+    ) {
+      pending.push("obtener_fallo_tc (presupuesto agotado)");
     }
-  } else if (idNorma) {
-    sections.push(
+
+    const sections: string[] = [
+      `# Pack de investigación — ${consulta}`,
       "",
-      `_Norma candidata idNorma=${idNorma}. Usa citar_texto_legal / obtener_articulo para el cuerpo._`,
-    );
-  }
+      `_Presupuesto ${totalMs}ms · parcial OK. Usa solo las fuentes listadas. No inventes fallos, dictámenes ni artículos._`,
+      "",
+    ];
 
-  if (rolMention) {
-    sections.push("", "## 1.c ROL detectado");
-    if (rolResolved) {
-      sections.push(`**ROL normalizado:** ${normalizeRol(rolMention).display}`);
-      sections.push(`**Cita sugerida:** ${rolResolved.citation}`);
-      const tcResults = rolResolved.results.filter(
-        (r) => r.tribunal === "Tribunal Constitucional",
-      );
-      const otherResults = rolResolved.results.filter(
-        (r) => r.tribunal !== "Tribunal Constitucional",
-      );
-      if (tcResults.length) {
-        sections.push("", "**Candidatos TC:**");
-        for (const r of tcResults.slice(0, limitePorFuente)) {
-          sections.push(
-            `- ${r.citation} — ${r.url}${r.secondaryUrl ? ` (PDF: ${r.secondaryUrl})` : ""}`,
-          );
-        }
-      }
-      if (otherResults.length) {
-        sections.push("", "**Candidatos PJUD / otros portales:**");
-        for (const r of otherResults.slice(0, limitePorFuente)) {
-          sections.push(`- ${r.title} — ${r.url}`);
-        }
-      }
-      if (falloTc) {
-        sections.push("", "### Extracto oficial TC", falloTc.markdown);
-      }
-      if (rolResolved.warnings.length) {
+    sections.push("## 1. Marco normativo");
+    if (leg.status === "fulfilled" && leg.value.results.length) {
+      for (const r of leg.value.results) {
         sections.push(
-          "",
-          ...rolResolved.warnings.map((w) => `- _Advertencia ROL:_ ${w}`),
+          `- **${r.title}** — ${r.citation} — ${r.url}${r.id ? ` (idNorma ${r.id})` : ""}`,
         );
       }
     } else {
-      sections.push("- No se pudo resolver el ROL en el tiempo disponible.");
+      pending.push("legislacion");
+      sections.push("- Sin resultados de legislación en el tiempo disponible.");
     }
-  }
 
-  const dumpSource = (
-    title: string,
-    result: PromiseSettledResult<SearchResponse>,
-    label: string,
-  ) => {
-    sections.push("", `## ${title}`);
-    if (result.status !== "fulfilled") {
-      pending.push(label);
-      sections.push(`- Fuente incompleta: ${String(result.reason)}`);
-      return;
-    }
-    if (!result.value.results.length) {
-      sections.push("- Sin hallazgos.");
-      return;
-    }
-    for (const r of result.value.results) {
-      if (label === "doctrina") {
-        sections.push(`- **${r.title}**`);
-        sections.push(`  - Cita: ${r.citation}`);
-        if (r.metadata?.citationApa) {
-          sections.push(`  - APA: ${String(r.metadata.citationApa)}`);
+    const articulo = extractArticuloMention(consulta);
+    const hot = resolveHotNorma(consulta);
+    const idFromLeg =
+      leg.status === "fulfilled"
+        ? leg.value.results.find((r) => r.id)?.id
+        : undefined;
+    const idNorma = hot?.idNorma ?? idFromLeg;
+    const leftForXml = remainingMs(startedAt, totalMs);
+    if (idNorma && articulo && leftForXml >= 1_500) {
+      sections.push("", "## 1.b Texto legal citado (oficial LeyChile)");
+      try {
+        const norma = await runWithDeadline(
+          "xml_articulo",
+          Math.min(4_000, leftForXml - 200),
+          (signal) =>
+            parseNormaTexto(String(idNorma), {
+              signal,
+              timeoutMs: 8_000,
+              retries: 1,
+            }),
+          packController.signal,
+        );
+        const art = findArticulo(norma, articulo);
+        if (art) {
+          const quote = truncateArticleQuote(art.texto, articleQuoteChars);
+          const artLines = [
+            `**${norma.tipo ?? "Norma"} ${norma.numero}, art. ${art.numero}** — ${norma.titulo}`,
+            art.url,
+            "",
+            ...quote.split(/(?<=\.)\s+/).map((line) => `> ${line}`),
+            "",
+            `_Cita sugerida: ${norma.tipo ?? "Norma"} N° ${norma.numero}, art. ${art.numero}._`,
+          ];
+          if (art.texto.length > articleQuoteChars) {
+            artLines.push(
+              `_Extracto truncado (${articleQuoteChars} chars). Usa citar_texto_legal / obtener_articulo para el íntegro._`,
+            );
+          }
+          sections.push(...artLines);
+        } else {
+          sections.push(
+            `No se encontró art. ${articulo}. Índice: ${norma.articulos
+              .map((a) => a.numero)
+              .slice(0, 20)
+              .join(", ")}`,
+          );
         }
-        sections.push(`  - URL: ${r.url}`);
-        if (r.summary) {
-          sections.push(`  - Extracto: ${String(r.summary).slice(0, 280)}…`);
-        }
-      } else {
-        const ids = [
-          r.rol ? `ROL ${r.rol}` : null,
-          r.tribunal,
-          r.evidence ? `evidencia=${r.evidence}` : null,
-        ]
-          .filter(Boolean)
-          .join(" · ");
-        sections.push(`- **${r.title}**${ids ? ` (${ids})` : ""} — ${r.url}`);
+      } catch (error) {
+        pending.push("xml_articulo");
+        sections.push(
+          `No se pudo traer el XML (${error instanceof Error ? error.message : String(error)}).`,
+          `URL: https://www.bcn.cl/leychile/navegar?idNorma=${idNorma}`,
+        );
       }
-    }
-    if (result.value.warnings?.length) {
+    } else if (idNorma && articulo) {
+      pending.push("xml_articulo (presupuesto agotado)");
       sections.push(
-        ...result.value.warnings.map((w) => `  - _Advertencia:_ ${w}`),
+        "",
+        `_Hay idNorma=${idNorma} art. ${articulo}, pero el presupuesto del pack se agotó. Usa citar_texto_legal._`,
+      );
+    } else if (idNorma) {
+      sections.push(
+        "",
+        `_Norma candidata idNorma=${idNorma}. Usa citar_texto_legal / obtener_articulo para el cuerpo._`,
       );
     }
-  };
 
-  dumpSource("2. Jurisprudencia (verificar texto oficial)", juris, "jurisprudencia");
-  dumpSource("3. Dictámenes (verificar texto oficial)", dict, "dictamenes");
-  dumpSource("4. Doctrina académica (no vinculante)", doc, "doctrina");
+    if (rolMention) {
+      sections.push("", "## 1.c ROL detectado");
+      if (rolResolved) {
+        sections.push(
+          `**ROL normalizado:** ${normalizeRol(rolMention).display}`,
+        );
+        sections.push(`**Cita sugerida:** ${rolResolved.citation}`);
+        const tcResults = rolResolved.results.filter(
+          (r) => r.tribunal === "Tribunal Constitucional",
+        );
+        const otherResults = rolResolved.results.filter(
+          (r) => r.tribunal !== "Tribunal Constitucional",
+        );
+        if (tcResults.length) {
+          sections.push("", "**Candidatos TC:**");
+          for (const r of tcResults.slice(0, limitePorFuente)) {
+            sections.push(
+              `- ${r.citation} — ${r.url}${r.secondaryUrl ? ` (PDF: ${r.secondaryUrl})` : ""}`,
+            );
+          }
+        }
+        if (otherResults.length) {
+          sections.push("", "**Candidatos PJUD / otros portales:**");
+          for (const r of otherResults.slice(0, limitePorFuente)) {
+            sections.push(`- ${r.title} — ${r.url}`);
+          }
+        }
+        if (falloTc) {
+          const shortExcerpt = truncateArticleQuote(falloTc.excerpt, 900);
+          sections.push(
+            "",
+            "### Extracto oficial TC",
+            `**${falloTc.citation}**`,
+            falloTc.url,
+            "",
+            ...shortExcerpt.split(/(?<=\.)\s+/).slice(0, 6).map((l) => `> ${l}`),
+            "",
+            `_Extracto acotado. Usa obtener_fallo_tc para más detalle / PDF._`,
+          );
+        }
+        if (rolResolved.warnings.length) {
+          sections.push(
+            "",
+            ...rolResolved.warnings
+              .slice(0, 3)
+              .map((w) => `- _Advertencia ROL:_ ${w}`),
+          );
+        }
+      } else {
+        sections.push("- No se pudo resolver el ROL en el tiempo disponible.");
+      }
+    }
 
-  sections.push("", "## 5. Lagunas / verificación pendiente");
-  if (pending.length) {
-    sections.push(
-      `- Fuentes incompletas por timeout/error: ${pending.join(", ")}`,
+    const dumpSource = (
+      title: string,
+      result: PromiseSettledResult<SearchResponse>,
+      label: string,
+    ) => {
+      sections.push("", `## ${title}`);
+      if (result.status !== "fulfilled") {
+        pending.push(label);
+        sections.push(`- Fuente incompleta: ${String(result.reason)}`);
+        return;
+      }
+      if (!result.value.results.length) {
+        sections.push("- Sin hallazgos.");
+        return;
+      }
+      for (const r of result.value.results.slice(0, limitePorFuente)) {
+        if (label === "doctrina") {
+          sections.push(`- **${r.title}**`);
+          sections.push(`  - Cita: ${r.citation}`);
+          sections.push(`  - URL: ${r.url}`);
+          if (r.summary) {
+            sections.push(`  - Extracto: ${String(r.summary).slice(0, 180)}…`);
+          }
+        } else {
+          const ids = [
+            r.rol ? `ROL ${r.rol}` : null,
+            r.tribunal,
+            r.evidence ? `evidencia=${r.evidence}` : null,
+          ]
+            .filter(Boolean)
+            .join(" · ");
+          sections.push(`- **${r.title}**${ids ? ` (${ids})` : ""} — ${r.url}`);
+        }
+      }
+      if (result.value.warnings?.length) {
+        sections.push(
+          ...result.value.warnings
+            .slice(0, 2)
+            .map((w) => `  - _Advertencia:_ ${w}`),
+        );
+      }
+    };
+
+    dumpSource(
+      "2. Jurisprudencia (verificar texto oficial)",
+      juris,
+      "jurisprudencia",
     );
-  }
-  sections.push(
-    "- Confirma vigencia en LeyChile antes de asesorar.",
-    "- No cites ratio decidendi desde títulos de links.",
-    "- Este pack no constituye asesoría jurídica formal.",
-  );
+    dumpSource("3. Dictámenes (verificar texto oficial)", dict, "dictamenes");
+    dumpSource("4. Doctrina académica (no vinculante)", doc, "doctrina");
 
-  return sections.join("\n");
+    const elapsed = Date.now() - startedAt;
+    sections.push("", "## 5. Lagunas / verificación pendiente");
+    if (pending.length) {
+      sections.push(
+        `- Fuentes incompletas por timeout/error: ${pending.join(", ")}`,
+      );
+    }
+    sections.push(
+      `- Tiempo pack: ${elapsed}ms (tope ${totalMs}ms).`,
+      "- Confirma vigencia en LeyChile antes de asesorar.",
+      "- No cites ratio decidendi desde títulos de links (evidence=link_only).",
+      "- Este pack no constituye asesoría jurídica formal.",
+    );
+
+    return capMarkdown(sections.join("\n"), maxChars);
+  } finally {
+    clearTimeout(packTimer);
+  }
 }

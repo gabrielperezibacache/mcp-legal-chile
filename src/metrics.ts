@@ -81,6 +81,7 @@ export const metrics = {
       obtener_articulo_cold_p95_ms: 5000,
       buscar_legislacion_p95_ms: 4000,
       buscar_derecho_chileno_p95_ms: 8000,
+      investigar_tema_total_p95_ms: 12_000,
       xml_success_rate_24h_target: 0.95,
     };
     const upstreamKeys = [

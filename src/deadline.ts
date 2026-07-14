@@ -11,13 +11,24 @@ export function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
+export function remainingMs(startedAt: number, budgetMs: number): number {
+  return Math.max(0, budgetMs - (Date.now() - startedAt));
+}
+
 /** Runs fn with a deadline; aborts the shared signal when time is up. */
 export async function runWithDeadline<T>(
   label: string,
   ms: number,
   fn: (signal: AbortSignal) => Promise<T>,
+  parent?: AbortSignal,
 ): Promise<T> {
+  if (ms <= 0) {
+    throw new DeadlineError(label, 0);
+  }
+  throwIfAborted(parent);
   const controller = new AbortController();
+  const onParentAbort = () => controller.abort();
+  parent?.addEventListener("abort", onParentAbort);
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([
@@ -31,5 +42,6 @@ export async function runWithDeadline<T>(
     ]);
   } finally {
     if (timer) clearTimeout(timer);
+    parent?.removeEventListener("abort", onParentAbort);
   }
 }

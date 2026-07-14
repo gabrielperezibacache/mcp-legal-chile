@@ -330,7 +330,7 @@ export async function searchJurisprudencia(
           share: 1 / tribunalSearchSites().length,
         }));
 
-  for (const { site, publisher, share } of sources) {
+  const sourceJobs = sources.map(async ({ site, publisher, share }) => {
     try {
       const hits = await searchWeb(q, {
         site,
@@ -361,12 +361,19 @@ export async function searchJurisprudencia(
             String(c.metadata?.anio ?? "") === opts.anio,
         );
       }
-      results.push(...citations);
+      return { citations, warning: undefined as string | undefined };
     } catch (error) {
-      warnings.push(
-        `Búsqueda en ${site} limitada: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      return {
+        citations: [] as CitationResult[],
+        warning: `Búsqueda en ${site} limitada: ${error instanceof Error ? error.message : String(error)}`,
+      };
     }
+  });
+
+  const settled = await Promise.all(sourceJobs);
+  for (const part of settled) {
+    results.push(...part.citations);
+    if (part.warning) warnings.push(part.warning);
   }
 
   const deduped = uniqueByUrl(enrich(results)).slice(0, limit);

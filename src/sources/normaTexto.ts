@@ -165,7 +165,14 @@ function stripNamespaces(xml: string): string {
   return xml.replace(NS_STRIP, "");
 }
 
-export async function fetchNormaXml(idNorma: string): Promise<string> {
+export async function fetchNormaXml(
+  idNorma: string,
+  opts: {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    retries?: number;
+  } = {},
+): Promise<string> {
   const code = idNorma.replace(/\D/g, "");
   return xmlCache.getOrSet(`xml:${code}`, async () => {
     const xmlUrl = `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
@@ -177,8 +184,9 @@ export async function fetchNormaXml(idNorma: string): Promise<string> {
           "Accept-Language": "es-CL,es;q=0.9",
         },
       },
-      60_000,
-      4,
+      opts.timeoutMs ?? 60_000,
+      opts.retries ?? 4,
+      opts.signal,
     );
     if (!xml.includes("<Norma") && !xml.includes("normaId")) {
       throw new Error(`La BCN no devolvió XML válido para idNorma=${code}`);
@@ -187,10 +195,17 @@ export async function fetchNormaXml(idNorma: string): Promise<string> {
   });
 }
 
-export async function parseNormaTexto(idNorma: string): Promise<NormaTexto> {
+export async function parseNormaTexto(
+  idNorma: string,
+  opts: {
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    retries?: number;
+  } = {},
+): Promise<NormaTexto> {
   const code = idNorma.replace(/\D/g, "");
   return xmlCache.getOrSet(`parsed:${code}`, async () => {
-    const xml = await fetchNormaXml(code);
+    const xml = await fetchNormaXml(code, opts);
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "@_",
