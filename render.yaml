@@ -2,7 +2,7 @@ services:
   - type: web
     name: mcp-legal-chile
     runtime: node
-    plan: free
+    plan: starter
     region: oregon
     buildCommand: npm ci && npm run build
     startCommand: npm start
@@ -12,3 +12,33 @@ services:
         value: "20"
       - key: HOST
         value: "0.0.0.0"
+      - key: WARMUP_ON_BOOT
+        value: "1"
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: mcp-legal-kv
+          property: connectionString
+      - key: MCP_API_KEYS
+        sync: false
+      - key: SEARCH_API_KEY
+        sync: false
+      - key: SEARCH_PROVIDER
+        value: auto
+
+  - type: cron
+    name: mcp-legal-keepalive
+    runtime: node
+    plan: starter
+    schedule: "*/10 * * * *"
+    buildCommand: "echo ok"
+    startCommand: >-
+      node -e "fetch('https://mcp-legal-chile.onrender.com/warmup').then(r=>r.json()).then(j=>console.log(JSON.stringify(j))).catch(e=>{console.error(e);process.exit(0)})"
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+
+keyValue:
+  - name: mcp-legal-kv
+    plan: starter
+    maxmemoryPolicy: allkeys-lru

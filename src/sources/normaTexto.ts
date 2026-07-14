@@ -31,6 +31,8 @@ export interface NormaTexto {
     idParte?: string;
     texto: string;
     url: string;
+    incisos: Array<{ label: string; texto: string }>;
+    literales: Array<{ letra: string; texto: string }>;
   }>;
 }
 
@@ -93,6 +95,47 @@ function parsePart(node: Record<string, unknown>): NormaPart {
   };
 }
 
+function parseIncisosAndLiterales(texto: string): {
+  incisos: Array<{ label: string; texto: string }>;
+  literales: Array<{ letra: string; texto: string }>;
+} {
+  const literales: Array<{ letra: string; texto: string }> = [];
+  const litRe =
+    /(?:^|[;\.\s])([a-z]|[a-z]\))[\).\-–—]\s*([^;]+?)(?=(?:[;\.]\s*[a-z][\).\-–—])|$)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = litRe.exec(texto)) !== null) {
+    const letra = m[1].replace(")", "");
+    const body = m[2].trim();
+    if (body.length > 8) literales.push({ letra, texto: body });
+  }
+
+  const incisos: Array<{ label: string; texto: string }> = [];
+  const parts = texto.split(/(?=\bInciso\s+[A-Za-z0-9º°]+)/i).filter(Boolean);
+  if (parts.length > 1) {
+    for (const part of parts) {
+      const labelMatch = part.match(/^Inciso\s+([A-Za-z0-9º°]+)/i);
+      if (labelMatch) {
+        incisos.push({
+          label: labelMatch[1],
+          texto: part.trim(),
+        });
+      }
+    }
+  } else {
+    // Approximate numbered paragraphs as inciso 1, 2, ...
+    const paragraphs = texto
+      .split(/\s{2,}|\n+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 40);
+    paragraphs.forEach((p, i) => {
+      if (i === 0) return;
+      incisos.push({ label: String(i + 1), texto: p });
+    });
+  }
+
+  return { incisos, literales };
+}
+
 function flattenArticles(
   parts: NormaPart[],
   idNorma: string,
@@ -101,6 +144,7 @@ function flattenArticles(
   for (const part of parts) {
     if (/art[ií]culo/i.test(part.tipo) || /^art[ií]culo/i.test(part.texto)) {
       const numero = normalizeArticleNumber(part.texto) ?? part.titulo ?? "?";
+      const { incisos, literales } = parseIncisosAndLiterales(part.texto);
       out.push({
         numero,
         idParte: part.idParte,
@@ -108,6 +152,8 @@ function flattenArticles(
         url: part.idParte
           ? `https://www.bcn.cl/leychile/navegar?idNorma=${idNorma}&idParte=${part.idParte}`
           : `https://www.bcn.cl/leychile/navegar?idNorma=${idNorma}`,
+        incisos,
+        literales,
       });
     }
     if (part.children.length) flattenArticles(part.children, idNorma, out);
@@ -226,9 +272,38 @@ export function findArticulo(
   });
 }
 
+export function findIncisoOrLiteral(
+  art: NormaTexto["articulos"][number],
+  opts: { inciso?: string; letra?: string },
+): { kind: "inciso" | "literal" | "articulo"; texto: string; label: string } {
+  if (opts.letra) {
+    const needle = opts.letra.replace(/[^a-z]/gi, "").toLowerCase();
+    const lit = art.literales.find(
+      (l) => l.letra.toLowerCase() === needle,
+    );
+    if (lit) {
+      return { kind: "literal", texto: lit.texto, label: `lit. ${lit.letra})` };
+    }
+  }
+  if (opts.inciso) {
+    const needle = opts.inciso.replace(/[º°]/g, "").toLowerCase();
+    const inc = art.incisos.find(
+      (i) => i.label.replace(/[º°]/g, "").toLowerCase() === needle,
+    );
+    if (inc) {
+      return { kind: "inciso", texto: inc.texto, label: `inc. ${inc.label}` };
+    }
+  }
+  return { kind: "articulo", texto: art.texto, label: `art. ${art.numero}` };
+}
+
 export function normaToPlainText(
   norma: NormaTexto,
-  opts: { maxChars?: number; articulo?: string } = {},
+  opts: {
+    maxChars?: number;
+    articulo?: string;
+    modo?: "indice" | "cuerpo";
+  } = {},
 ): string {
   const maxChars = opts.maxChars ?? 12_000;
   if (opts.articulo) {
@@ -245,6 +320,20 @@ export function normaToPlainText(
       art.url,
       "",
       art.texto,
+    ].join("\n");
+  }
+
+  if (opts.modo === "indice") {
+    return [
+      `${norma.tipo ?? "Norma"} ${norma.numero ?? norma.idNorma} — ${norma.titulo}`,
+      `idNorma: ${norma.idNorma}`,
+      `URL: ${norma.url}`,
+      `Artículos: ${norma.articulos.length}`,
+      "",
+      ...norma.articulos.map(
+        (a) =>
+          `- art. ${a.numero}${a.idParte ? ` (idParte ${a.idParte})` : ""} — ${a.url}`,
+      ),
     ].join("\n");
   }
 
@@ -267,7 +356,7 @@ export function normaToPlainText(
     const block = `### Artículo ${art.numero}\n${art.texto}\n`;
     if (chunks.join("\n").length + block.length > maxChars) {
       chunks.push(
-        `\n[Texto truncado por longitud. Quedan ${norma.articulos.length - norma.articulos.indexOf(art)} artículos. Usa obtener_articulo o reduce el alcance.]`,
+        `\n[Texto truncado por longitud. Quedan ${norma.articulos.length - norma.articulos.indexOf(art)} artículos. Usa modo=indice u obtener_articulo.]`,
       );
       break;
     }

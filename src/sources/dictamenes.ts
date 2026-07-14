@@ -1,4 +1,5 @@
 import type { CitationResult, SearchResponse } from "../types.js";
+import { parseCaseIdentifiers } from "../parsers.js";
 import { uniqueByUrl } from "../util.js";
 import { searchWeb, webHitsToCitations } from "./websearch.js";
 
@@ -14,7 +15,7 @@ export async function searchDictamenes(
   limit = 8,
 ): Promise<SearchResponse> {
   const warnings: string[] = [
-    "La CGR no publica una API abierta de dictámenes. Los resultados son enlaces públicos; confirma el texto en el portal oficial.",
+    "Evidencia=link_only: confirma el texto íntegro en el portal de la Contraloría.",
   ];
   const results: CitationResult[] = [];
   const dictamenNumber = extractDictamenNumber(query);
@@ -22,11 +23,12 @@ export async function searchDictamenes(
   if (dictamenNumber) {
     results.push({
       source: "dictamenes",
-      title: `Buscar dictamen N° ${dictamenNumber} en Contraloría`,
+      title: `Dictamen N° ${dictamenNumber} (portal CGR)`,
       citation: `Dictamen N° ${dictamenNumber}`,
-      url: `https://www.contraloria.cl/web/cgr/dictamenes-y-pronunciamientos-juridicos`,
+      url: "https://www.contraloria.cl/web/cgr/dictamenes-y-pronunciamientos-juridicos",
       publisher: "Contraloría General de la República",
       id: dictamenNumber,
+      evidence: "link_only",
       summary:
         "Abre el buscador oficial de la CGR e ingresa el número del dictamen para obtener el texto íntegro.",
     });
@@ -46,15 +48,26 @@ export async function searchDictamenes(
   for (const { site, publisher } of sites) {
     try {
       const hits = await searchWeb(
-        dictamenNumber
-          ? `dictamen ${dictamenNumber}`
-          : `${query} dictamen`,
+        dictamenNumber ? `dictamen ${dictamenNumber}` : `${query} dictamen`,
         {
           site,
           limit: Math.max(3, Math.ceil(limit / sites.length)),
         },
       );
-      results.push(...webHitsToCitations(hits, "dictamenes", publisher));
+      const citations = webHitsToCitations(hits, "dictamenes", publisher).map(
+        (hit) => {
+          const ids = parseCaseIdentifiers(hit.title, hit.summary ?? "");
+          return {
+            ...hit,
+            evidence: "link_only" as const,
+            id: ids.dictamen ?? hit.id,
+            citation: ids.dictamen
+              ? `Dictamen N° ${ids.dictamen}`
+              : hit.citation,
+          };
+        },
+      );
+      results.push(...citations);
     } catch (error) {
       warnings.push(
         `No se pudo consultar ${site}: ${error instanceof Error ? error.message : String(error)}`,
@@ -63,7 +76,6 @@ export async function searchDictamenes(
   }
 
   const deduped = uniqueByUrl(results).slice(0, limit);
-
   if (deduped.length === 0) {
     warnings.push(
       "No se indexaron dictámenes automáticamente. Usa el buscador oficial de la Contraloría.",
@@ -83,4 +95,10 @@ export async function searchDictamenes(
       )}`,
     },
   };
+}
+
+export async function resolverDictamen(
+  numero: string,
+): Promise<SearchResponse> {
+  return searchDictamenes(`dictamen ${numero}`, 5);
 }

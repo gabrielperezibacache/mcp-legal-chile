@@ -1,33 +1,57 @@
+import { metrics } from "./metrics.js";
+import { withUpstreamLimit } from "./upstream.js";
+
 export const USER_AGENT =
   process.env.USER_AGENT ??
-  "MCP-Legal-Chile/1.0 (conector MCP; https://mcp-legal-chile.onrender.com)";
+  "MCP-Legal-Chile/1.2 (conector MCP; https://mcp-legal-chile.onrender.com)";
 
 const DEFAULT_TIMEOUT_MS = Number(process.env.FETCH_TIMEOUT_MS ?? 45_000);
+
+async function rawFetch(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  return withUpstreamLimit(url, async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          "User-Agent": USER_AGENT,
+          ...(init.headers ?? {}),
+        },
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+}
 
 export async function fetchJson<T>(
   url: string,
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      headers: {
-        "User-Agent": USER_AGENT,
-        Accept: "application/json",
-        ...(init.headers ?? {}),
+  return metrics.time("sparql", async () => {
+    const response = await rawFetch(
+      url,
+      {
+        ...init,
+        headers: {
+          Accept: "application/json",
+          ...(init.headers ?? {}),
+        },
       },
-    });
+      timeoutMs,
+    );
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} al consultar ${url}`);
     }
     return (await response.json()) as T;
-  } finally {
-    clearTimeout(timer);
-  }
+  });
 }
 
 export async function fetchText(
@@ -35,31 +59,21 @@ export async function fetchText(
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      headers: {
-        "User-Agent": USER_AGENT,
-        ...(init.headers ?? {}),
-      },
-    });
+  const metricName = url.includes("leychile") ? "leychile_xml" : "websearch";
+  return metrics.time(metricName, async () => {
+    const response = await rawFetch(url, init, timeoutMs);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} al consultar ${url}`);
     }
     return await response.text();
-  } finally {
-    clearTimeout(timer);
-  }
+  });
 }
 
 export async function fetchTextWithRetry(
   url: string,
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
-  retries = 3,
+  retries = 4,
 ): Promise<string> {
   let lastError: unknown;
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -68,11 +82,11 @@ export async function fetchTextWithRetry(
     } catch (error) {
       lastError = error;
       const message = error instanceof Error ? error.message : String(error);
-      const retryable = /HTTP 429|HTTP 5\d\d|aborted|fetch failed/i.test(
-        message,
-      );
+      const retryable =
+        /HTTP 429|HTTP 5\d\d|aborted|fetch failed|Circuito abierto/i.test(
+          message,
+        );
       if (!retryable || attempt === retries - 1) break;
-      // Longer backoff helps against LeyChile rate limits from cloud IPs.
       await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt));
     }
   }

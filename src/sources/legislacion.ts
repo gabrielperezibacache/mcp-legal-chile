@@ -1,4 +1,5 @@
 import type { CitationResult, SearchResponse } from "../types.js";
+import { resolveHotNorma } from "../catalog.js";
 import { sparqlCache } from "../cache.js";
 import {
   escapeSparqlString,
@@ -78,6 +79,7 @@ function toCitation(b: SparqlBinding): CitationResult | null {
     secondaryUrl: norma,
     publisher: organismo ?? "Biblioteca del Congreso Nacional / LeyChile",
     id: code,
+    evidence: "metadata",
     metadata: {
       leychileCode: code,
       tipo,
@@ -135,6 +137,21 @@ export async function searchLegislacion(
   query: string,
   limit = 8,
 ): Promise<SearchResponse> {
+  const hot = resolveHotNorma(query);
+  if (hot) {
+    const byId = await getNorma({ leychileCode: hot.idNorma });
+    if (byId.results.length > 0) {
+      return {
+        ...byId,
+        query,
+        warnings: [
+          ...(byId.warnings ?? []),
+          `Resuelto por catálogo de normas frecuentes: ${hot.label} (idNorma ${hot.idNorma}).`,
+        ],
+      };
+    }
+  }
+
   const lawNumber = extractLawNumber(query);
   if (lawNumber) {
     const byNumber = await getNorma({ number: lawNumber });
@@ -302,4 +319,81 @@ LIMIT 10
     results: [],
     warnings: ["Indica id_norma, numero o consulta."],
   };
+}
+
+export async function estadoNorma(idNorma: string): Promise<Record<string, unknown>> {
+  const code = idNorma.replace(/\D/g, "");
+  const meta = await getNorma({ leychileCode: code });
+  const result = meta.results[0];
+  return {
+    idNorma: code,
+    titulo: result?.title,
+    citation: result?.citation,
+    fechaPublicacion: result?.date,
+    url: result?.url ?? `https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
+    historiaUrl: `https://www.bcn.cl/leychile/navegar?idNorma=${code}&tipoVersion=H`,
+    metadata: result?.metadata,
+    warnings: [
+      "Confirma vigencia y texto consolidado en LeyChile. El campo derogado del XML (si se pide con obtener_texto_norma) es la señal más fiable entre herramientas públicas.",
+      ...(meta.warnings ?? []),
+    ],
+  };
+}
+
+export async function normasRelacionadas(
+  idNorma: string,
+): Promise<SearchResponse> {
+  const code = idNorma.replace(/\D/g, "");
+  // BCN relationship predicates vary; try subjects/title proximity via same leychile family,
+  // and always return historia deep-link.
+  const sparql = `
+PREFIX bcnnorms: <http://datos.bcn.cl/ontologies/bcn-norms#>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+
+SELECT DISTINCT ?norma ?title ?number ?date ?code
+WHERE {
+  ?ref a bcnnorms:Norm .
+  ?ref bcnnorms:leychileCode ?refCode .
+  FILTER(?refCode = ${code})
+  OPTIONAL { ?ref dc:title ?refTitle }
+  ?norma a bcnnorms:Norm .
+  ?norma dc:title ?title .
+  OPTIONAL { ?norma bcnnorms:hasNumber ?number }
+  OPTIONAL { ?norma bcnnorms:publishDate ?date }
+  OPTIONAL { ?norma bcnnorms:leychileCode ?code }
+  FILTER(BOUND(?refTitle) && CONTAINS(LCASE(STR(?title)), LCASE(SUBSTR(STR(?refTitle), 1, 18))))
+  FILTER(?code != ${code})
+}
+ORDER BY DESC(?date)
+LIMIT 12
+`.trim();
+
+  try {
+    const data = await runSparql(sparql);
+    const results = bindingsToResults(data.results.bindings, 8);
+    return {
+      query: `relacionadas idNorma=${code}`,
+      source: "legislacion",
+      results,
+      warnings: [
+        "Relaciones inferidas por similitud de título en BCN; verifica en la historia de la norma en LeyChile.",
+      ],
+      searchUrls: {
+        historia: `https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
+      },
+    };
+  } catch (error) {
+    return {
+      query: `relacionadas idNorma=${code}`,
+      source: "legislacion",
+      results: [],
+      warnings: [
+        `No se pudieron inferir relaciones SPARQL: ${error instanceof Error ? error.message : String(error)}`,
+        "Usa la historia oficial en LeyChile.",
+      ],
+      searchUrls: {
+        historia: `https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
+      },
+    };
+  }
 }

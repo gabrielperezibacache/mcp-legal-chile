@@ -1,52 +1,75 @@
 # MCP Legal Chile
 
-Conector **MCP** para consultar derecho chileno desde Claude, Cursor u otras apps compatibles — respuestas con **citas y enlaces verificables**.
+Conector **MCP** de derecho chileno para Claude, Cursor y apps compatibles.
 
-**Producción:** https://mcp-legal-chile.onrender.com/mcp
+**Producción:** https://mcp-legal-chile.onrender.com/mcp  
+**Versión:** 1.2.0
 
-## Capacidades (v1.1)
+## Matriz de honestidad (qué trae cada tool)
 
-| Herramienta | Qué hace |
+| Tool | Evidencia | Fuente |
+|---|---|---|
+| `obtener_articulo` / `obtener_texto_norma` / `obtener_inciso` | **Texto íntegro** | XML oficial LeyChile |
+| `buscar_legislacion` / `obtener_norma` / `estado_norma` | Metadata | BCN SPARQL |
+| `buscar_jurisprudencia` / `buscar_tc` | **Solo enlace** | PJUD / TC (vía búsqueda) |
+| `buscar_dictamenes` / `resolver_dictamen` | **Solo enlace** | Contraloría |
+| `buscar_doctrina` | Metadata académica | OpenAlex |
+| `investigar_tema` | Pack mixto | Orquesta lo anterior |
+
+**Regla:** si `evidence=link_only`, el asistente no debe afirmar el contenido del fallo/dictamen.
+
+## SLOs (objetivos P95)
+
+| Operación | Objetivo |
 |---|---|
-| `buscar_legislacion` / `obtener_norma` | Metadata BCN / LeyChile (SPARQL) |
-| `obtener_texto_norma` | **Texto oficial** completo desde XML LeyChile |
-| `obtener_articulo` | Artículo puntual con URL a LeyChile |
-| `buscar_jurisprudencia` | Enlaces a fallos PJUD / Tribunal Constitucional |
-| `buscar_doctrina` | Doctrina académica (OpenAlex) |
-| `buscar_dictamenes` | Dictámenes CGR / administración |
-| `buscar_derecho_chileno` | Búsqueda unificada |
-| Prompts | `consulta_juridica_chile`, `citar_articulo_ley` |
+| Artículo con cache hit | &lt; 500 ms |
+| Artículo cold (sin 429) | &lt; 5 s |
+| `buscar_legislacion` | &lt; 4 s |
+| `buscar_derecho_chileno` (parcial OK) | &lt; 8 s |
+| Éxito XML LeyChile (24h, con caché) | &gt; 95% |
 
-Las búsquedas devuelven **markdown listo para citar** (o JSON con `formato: "json"`).
+Métricas en vivo: `GET /metrics`
+
+## Capacidades principales
+
+- Texto oficial LeyChile (artículos, índice/cuerpo, inciso/literal heurístico)
+- Catálogo de normas frecuentes (CPR, Códigos, 19.628, 19.496…)
+- `investigar_tema` — pack anti-alucinación
+- `formatear_cita` — citas chilenas solo con IDs ya obtenidos
+- Jurisprudencia/TC con parsers ROL/RIT
+- Caché durable (Redis si `REDIS_URL`) + singleflight + stale-if-error
+- Rate limit / circuit breaker hacia LeyChile
+- API keys + cuotas diarias (`MCP_API_KEYS`)
+- Warmup `/warmup` + cron keep-alive
 
 ## Inicio rápido
 
 ```bash
 npm install
 npm run dev
+# smoke local (server corriendo):
+SMOKE_BASE=http://127.0.0.1:3000 npm run smoke
 ```
 
-- Landing: `http://localhost:3000`
-- MCP: `http://localhost:3000/mcp`
-
-### Claude (remoto)
-
-Conectores → Añadir → `https://mcp-legal-chile.onrender.com/mcp`
-
-### Cursor (stdio)
-
-Ver `cursor-mcp.example.json`.
+MCP: `http://localhost:3000/mcp`
 
 ## Variables de entorno
 
 | Variable | Descripción |
 |---|---|
-| `PORT` / `HOST` | Puerto y bind (`0.0.0.0` en Render) |
-| `PUBLIC_BASE_URL` | URL pública |
-| `ALLOWED_HOSTS` | Hosts permitidos (opcionales; Render hostname se detecta) |
-| `FETCH_TIMEOUT_MS` | Timeout HTTP general (default 45000) |
-| `SPARQL_TIMEOUT_MS` | Timeout BCN SPARQL (default 60000) |
+| `REDIS_URL` | Redis/Key Value (opcional; si falta, solo memoria) |
+| `MCP_API_KEYS` | `name:key:limit,...` — si está vacío, acceso abierto |
+| `SEARCH_PROVIDER` | `auto` \| `serper` \| `brave` |
+| `SEARCH_API_KEY` / `SERPER_API_KEY` / `BRAVE_API_KEY` | Búsqueda web |
+| `WARMUP_ON_BOOT` | `1` (default) / `0` |
+| `LEYCHILE_MIN_INTERVAL_MS` | Intervalo mínimo entre requests LeyChile |
+| `CIRCUIT_OPEN_MS` / `CIRCUIT_THRESHOLD` | Circuit breaker |
+| `UNIFIED_BUDGET_MS` / `PACK_TIMEOUT_MS` | Presupuestos de fan-out |
+
+## Deploy
+
+Blueprint: [`render.yaml`](render.yaml) — plan **starter**, Key Value, cron keep-alive cada 10 min.
 
 ## Aviso
 
-No sustituye asesoría jurídica. Jurisprudencia y dictámenes dependen de índices públicos (PJUD/CGR no ofrecen API abierta). Verifica siempre la URL oficial.
+No sustituye asesoría jurídica. PJUD/CGR no ofrecen API abierta de texto completo.

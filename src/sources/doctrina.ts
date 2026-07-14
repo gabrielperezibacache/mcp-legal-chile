@@ -95,7 +95,9 @@ export async function searchDoctrina(
 
   const results = uniqueByUrl(
     data.results.map(toCitation).filter((r): r is CitationResult => r !== null),
-  ).slice(0, limit);
+  )
+    .map((r) => ({ ...r, evidence: "metadata" as const }))
+    .slice(0, limit);
 
   return {
     query,
