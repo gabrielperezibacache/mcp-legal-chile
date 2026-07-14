@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import { xmlCache } from "../cache.js";
-import { fetchText } from "../util.js";
+import { fetchTextWithRetry } from "../util.js";
 
 const NS_STRIP = /\{[^}]+\}/g;
 
@@ -123,7 +123,7 @@ export async function fetchNormaXml(idNorma: string): Promise<string> {
   const code = idNorma.replace(/\D/g, "");
   return xmlCache.getOrSet(`xml:${code}`, async () => {
     const xmlUrl = `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
-    const xml = await fetchText(
+    const xml = await fetchTextWithRetry(
       xmlUrl,
       {
         headers: {
@@ -132,6 +132,7 @@ export async function fetchNormaXml(idNorma: string): Promise<string> {
         },
       },
       60_000,
+      4,
     );
     if (!xml.includes("<Norma") && !xml.includes("normaId")) {
       throw new Error(`La BCN no devolvió XML válido para idNorma=${code}`);

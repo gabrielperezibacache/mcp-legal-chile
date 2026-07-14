@@ -55,6 +55,31 @@ export async function fetchText(
   }
 }
 
+export async function fetchTextWithRetry(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  retries = 3,
+): Promise<string> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      return await fetchText(url, init, timeoutMs);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const retryable = /HTTP 429|HTTP 5\d\d|aborted|fetch failed/i.test(
+        message,
+      );
+      if (!retryable || attempt === retries - 1) break;
+      await new Promise((r) => setTimeout(r, 800 * 2 ** attempt));
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(String(lastError));
+}
+
 export function escapeSparqlString(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
