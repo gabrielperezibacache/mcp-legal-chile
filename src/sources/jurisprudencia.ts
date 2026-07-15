@@ -1,4 +1,5 @@
 import type { CitationResult, SearchResponse } from "../types.js";
+import { isAbortLikeError, runWithDeadline } from "../deadline.js";
 import { normalizeRol, parseCaseIdentifiers } from "../parsers.js";
 import {
   buildPortalLinks,
@@ -13,7 +14,10 @@ import {
   type TcSearchHit,
 } from "./tcBuscador.js";
 import { uniqueByUrl } from "../util.js";
-import { searchWeb, webHitsToCitations } from "./websearch.js";
+import { hasPaidWebSearch, searchWeb, webHitsToCitations } from "./websearch.js";
+
+/** Fail-fast web scrape budget so DDG/datacenter blocks never eat the tool deadline. */
+const JURIS_WEB_BUDGET_MS = Number(process.env.JURIS_WEB_BUDGET_MS ?? 5_000);
 
 export interface ResolveRolResult {
   rol: string;
@@ -289,6 +293,33 @@ function looksLikeCourtHitExport(title: string, url: string): boolean {
   return looksLikeCourtHit(title, url);
 }
 
+function portalLinkResults(query: string): CitationResult[] {
+  return [
+    {
+      source: "jurisprudencia",
+      title: `Portal unificado de sentencias PJUD — buscar: ${query}`,
+      citation: `Búsqueda sugerida PJUD: ${query}`,
+      summary:
+        "PJUD no ofrece API abierta. Abre el portal y busca el ROL o la materia manualmente.",
+      url: "https://www.pjud.cl/portal-unificado-sentencias",
+      publisher: "Poder Judicial de Chile",
+      evidence: "link_only",
+      metadata: { provider: "portal_link", query },
+    },
+    {
+      source: "jurisprudencia",
+      title: `Buscador TC — buscar: ${query}`,
+      citation: `Búsqueda sugerida TC: ${query}`,
+      summary:
+        "Usa buscar_tc / obtener_fallo_tc para metadatos y extracto oficial del Tribunal Constitucional.",
+      url: `https://buscador.tcchile.cl/#/?q=${encodeURIComponent(query)}`,
+      publisher: "Tribunal Constitucional",
+      evidence: "link_only",
+      metadata: { provider: "portal_link", query },
+    },
+  ];
+}
+
 export async function searchJurisprudencia(
   query: string,
   limit = 8,
@@ -305,82 +336,132 @@ export async function searchJurisprudencia(
   ];
   const results: CitationResult[] = [];
 
-  const qParts = [query, "(sentencia OR fallo OR causa)"];
-  if (opts.anio) qParts.push(opts.anio);
-  if (opts.tribunal) qParts.push(opts.tribunal);
-  const q = qParts.join(" ");
-
   const portal = matchTribunalPortal(opts.tribunal ?? "");
-  const sources = opts.site
-    ? [{ site: opts.site, publisher: opts.site, share: 1 }]
-    : portal
-      ? portal.sites.map((site) => ({
-          site,
-          publisher: portal.name,
-          share: 1 / portal.sites.length,
-        }))
-      : tribunalSearchSites().map((site) => ({
-          site,
-          publisher:
-            site === "pjud.cl"
-              ? "Poder Judicial de Chile"
-              : site.includes("tcchile")
-                ? "Tribunal Constitucional"
-                : site,
-          share: 1 / tribunalSearchSites().length,
-        }));
+  const skipTc = Boolean(opts.site) || (portal != null && portal.id !== "tc");
 
-  const sourceJobs = sources.map(async ({ site, publisher, share }) => {
+  // 1) TC API first — real metadata, no web scrape.
+  if (!skipTc) {
     try {
-      const hits = await searchWeb(q, {
-        site,
-        limit: Math.max(2, Math.ceil(limit * share)),
-        signal: opts.signal,
-      });
-      const filtered = hits.filter((h) =>
-        looksLikeCourtHitExport(h.title, h.url),
-      );
-      let citations = webHitsToCitations(
-        filtered.length ? filtered : hits,
-        "jurisprudencia",
-        publisher,
-      );
-      if (opts.soloOficiales) {
-        citations = citations.filter(
-          (c) =>
-            c.url.includes("pjud.cl") ||
-            c.url.includes("tribunalconstitucional.cl") ||
-            c.url.includes("buscador.tcchile.cl"),
-        );
-      }
-      if (opts.anio) {
-        citations = citations.filter(
-          (c) =>
-            c.title.includes(opts.anio!) ||
-            c.summary?.includes(opts.anio!) ||
-            String(c.metadata?.anio ?? "") === opts.anio,
-        );
-      }
-      return { citations, warning: undefined as string | undefined };
+      // Without a paid web index, TC is the only reliable automated source.
+      const tcLimit = limit;
+      const hits = await searchTcSentencias(query, tcLimit, opts.signal);
+      results.push(...hits.map(tcHitToCitation));
     } catch (error) {
-      return {
-        citations: [] as CitationResult[],
-        warning: `Búsqueda en ${site} limitada: ${error instanceof Error ? error.message : String(error)}`,
-      };
+      if (opts.signal?.aborted) throw error;
+      warnings.push(
+        `API TC limitada: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
-  });
-
-  const settled = await Promise.all(sourceJobs);
-  for (const part of settled) {
-    results.push(...part.citations);
-    if (part.warning) warnings.push(part.warning);
   }
 
-  const deduped = uniqueByUrl(enrich(results)).slice(0, limit);
+  // 2) Web scrape for PJUD/portals — short budget; skip unpaid DDG when no key
+  //    (datacenter IPs usually get fetch failed / empty and burn the deadline).
+  const wantWeb =
+    !portal || portal.id !== "tc" || Boolean(opts.site);
+  if (wantWeb && results.length < limit) {
+    if (!hasPaidWebSearch() && !opts.site) {
+      warnings.push(
+        "Sin SEARCH_API_KEY/BRAVE: se omite scrape web (DDG falla desde datacenter). Configura Serper/Brave o usa portales oficiales / buscar_tc.",
+      );
+    } else {
+      const qParts = [query, "(sentencia OR fallo OR causa)"];
+      if (opts.anio) qParts.push(opts.anio);
+      if (opts.tribunal) qParts.push(opts.tribunal);
+      const q = qParts.join(" ");
+
+      const sources = opts.site
+        ? [{ site: opts.site, publisher: opts.site, share: 1 }]
+        : portal
+          ? portal.sites.map((site) => ({
+              site,
+              publisher: portal.name,
+              share: 1 / portal.sites.length,
+            }))
+          : tribunalSearchSites().map((site) => ({
+              site,
+              publisher:
+                site === "pjud.cl"
+                  ? "Poder Judicial de Chile"
+                  : site.includes("tcchile") || site.includes("tribunalconstitucional")
+                    ? "Tribunal Constitucional"
+                    : site,
+              share: 1 / tribunalSearchSites().length,
+            }));
+
+      try {
+        const webParts = await runWithDeadline(
+          "web-jurisprudencia",
+          JURIS_WEB_BUDGET_MS,
+          async (webSignal) => {
+            const jobs = sources.map(async ({ site, publisher, share }) => {
+              try {
+                const hits = await searchWeb(q, {
+                  site,
+                  limit: Math.max(2, Math.ceil(limit * share)),
+                  signal: webSignal,
+                });
+                const filtered = hits.filter((h) =>
+                  looksLikeCourtHitExport(h.title, h.url),
+                );
+                let citations = webHitsToCitations(
+                  filtered.length ? filtered : hits,
+                  "jurisprudencia",
+                  publisher,
+                );
+                if (opts.soloOficiales) {
+                  citations = citations.filter(
+                    (c) =>
+                      c.url.includes("pjud.cl") ||
+                      c.url.includes("tribunalconstitucional.cl") ||
+                      c.url.includes("buscador.tcchile.cl"),
+                  );
+                }
+                if (opts.anio) {
+                  citations = citations.filter(
+                    (c) =>
+                      c.title.includes(opts.anio!) ||
+                      c.summary?.includes(opts.anio!) ||
+                      String(c.metadata?.anio ?? "") === opts.anio,
+                  );
+                }
+                return { citations, warning: undefined as string | undefined };
+              } catch (error) {
+                if (isAbortLikeError(error)) throw error;
+                return {
+                  citations: [] as CitationResult[],
+                  warning: `Búsqueda en ${site} limitada: ${error instanceof Error ? error.message : String(error)}`,
+                };
+              }
+            });
+            return Promise.all(jobs);
+          },
+          opts.signal,
+        );
+        for (const part of webParts) {
+          results.push(...part.citations);
+          if (part.warning) warnings.push(part.warning);
+        }
+      } catch (error) {
+        if (opts.signal?.aborted) throw error;
+        if (isAbortLikeError(error)) {
+          warnings.push(
+            `Scrape web cortado (${error instanceof Error ? error.message : String(error)}).`,
+          );
+        } else {
+          warnings.push(
+            `Scrape web no disponible: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
+    }
+  }
+
+  let deduped = uniqueByUrl(enrich(results)).slice(0, limit);
   if (deduped.length === 0) {
     warnings.push(
-      "No se indexaron fallos automáticamente. Prueba resolver_rol si conoces el ROL.",
+      "No se indexaron fallos automáticamente. Se incluyen portales oficiales; con ROL usa resolver_rol / obtener_fallo_tc.",
     );
+    deduped = uniqueByUrl(enrich(portalLinkResults(query))).slice(0, limit);
   }
 
   return {
@@ -404,23 +485,51 @@ export async function searchTribunalConstitucional(
   const warnings: string[] = [
     "Fuente: API oficial buscador-backend.tcchile.cl. Usa obtener_fallo_tc para extracto.",
   ];
+  const searchUrls = {
+    tribunalConstitucional: `https://buscador.tcchile.cl/#/?q=${encodeURIComponent(query)}`,
+  };
   try {
     const hits = await searchTcSentencias(query, limit, opts.signal);
-    const results = hits.map(tcHitToCitation);
     return {
       query,
       source: "jurisprudencia",
-      results,
+      results: hits.map(tcHitToCitation),
       warnings,
-      searchUrls: {
-        tribunalConstitucional: `https://buscador.tcchile.cl/#/?q=${encodeURIComponent(query)}`,
-      },
+      searchUrls,
     };
   } catch (error) {
     if (opts.signal?.aborted) throw error;
+    // Never cascade into slow DuckDuckGo after a TC abort/timeout — that is what
+    // made keyword searches miss the MCP client deadline.
+    if (isAbortLikeError(error)) {
+      return {
+        query,
+        source: "jurisprudencia",
+        results: [],
+        warnings: [
+          ...warnings,
+          `API TC no respondió a tiempo (${error instanceof Error ? error.message : String(error)}). Reintenta o abre el buscador oficial.`,
+        ],
+        searchUrls,
+      };
+    }
     warnings.push(
-      `API TC no disponible (${error instanceof Error ? error.message : String(error)}); fallback web.`,
+      `API TC no disponible (${error instanceof Error ? error.message : String(error)}).`,
     );
+    if (!hasPaidWebSearch()) {
+      return {
+        query,
+        source: "jurisprudencia",
+        results: portalLinkResults(query).filter((r) =>
+          r.url.includes("tcchile"),
+        ),
+        warnings: [
+          ...warnings,
+          "Sin SEARCH_API_KEY: no hay fallback web confiable desde el servidor.",
+        ],
+        searchUrls,
+      };
+    }
     const fallback = await searchJurisprudencia(query, limit, {
       site: "tribunalconstitucional.cl",
       tribunal: "Tribunal Constitucional",
@@ -430,6 +539,7 @@ export async function searchTribunalConstitucional(
     return {
       ...fallback,
       warnings: [...warnings, ...(fallback.warnings ?? [])],
+      searchUrls: { ...searchUrls, ...(fallback.searchUrls ?? {}) },
     };
   }
 }

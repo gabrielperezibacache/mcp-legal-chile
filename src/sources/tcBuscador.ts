@@ -5,7 +5,49 @@ import { fetchJson } from "../util.js";
 const TC_API = "https://buscador-backend.tcchile.cl/api/extended";
 const TC_FICHA_API = "https://buscador-backend.tcchile.cl/api/buscadorexterno/ficha";
 const TC_Buscador_UI = "https://buscador.tcchile.cl";
-const TC_TIMEOUT_MS = Number(process.env.TC_TIMEOUT_MS ?? 10_000);
+/** TC keyword search often takes 6–14s; keep under SEARCH_TOOL_TIMEOUT_MS. */
+const TC_TIMEOUT_MS = Number(process.env.TC_TIMEOUT_MS ?? 18_000);
+
+const TC_STOPWORDS = new Set([
+  "a",
+  "al",
+  "ante",
+  "bajo",
+  "como",
+  "con",
+  "contra",
+  "de",
+  "del",
+  "desde",
+  "el",
+  "en",
+  "entre",
+  "hacia",
+  "hasta",
+  "la",
+  "las",
+  "lo",
+  "los",
+  "mas",
+  "más",
+  "ni",
+  "no",
+  "o",
+  "para",
+  "por",
+  "que",
+  "se",
+  "sin",
+  "sobre",
+  "su",
+  "sus",
+  "un",
+  "una",
+  "unos",
+  "unas",
+  "y",
+  "ya",
+]);
 
 export interface TcSearchHit {
   id: string;
@@ -53,6 +95,40 @@ interface TcFichaResponse {
   };
 }
 
+/**
+ * TC free-text search ANDs every token, including stopwords like "a"/"la",
+ * which yields empty results for phrases such as "derecho a la vida".
+ */
+export function normalizeTcSearchQuery(query: string): string {
+  const raw = query.normalize("NFC").trim();
+  if (!raw) return raw;
+  const tokens = raw
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const kept = tokens.filter((t) => {
+    const lower = t.toLowerCase();
+    return lower.length > 1 && !TC_STOPWORDS.has(lower);
+  });
+  if (kept.length > 0) return kept.join(" ");
+  return tokens.join(" ") || raw;
+}
+
+function buildTcSearchFilter(search: string): Record<string, unknown> {
+  return {
+    folio: "",
+    fecha_sentencia: null,
+    search,
+    tipo_resolucion: null,
+    resultado: null,
+    competencia: null,
+    articulo_constitucion: null,
+    ministro: null,
+    cuerpo_legal: null,
+    palabra_clave: null,
+  };
+}
+
 function filterParam(
   detalle: TcFichaDetalle[] | undefined,
   names: string[],
@@ -74,10 +150,12 @@ export async function searchTcSentencias(
   signal?: AbortSignal,
 ): Promise<TcSearchHit[]> {
   throwIfAborted(signal);
-  const key = `tc:search:${query}:${limit}`;
+  const search = normalizeTcSearchQuery(query);
+  if (!search) return [];
+  const key = `tc:search:v2:${search}:${limit}`;
   return webCache.getOrSet(key, async () => {
     throwIfAborted(signal);
-    const filter = encodeURIComponent(JSON.stringify({ search: query }));
+    const filter = encodeURIComponent(JSON.stringify(buildTcSearchFilter(search)));
     const data = await fetchJson<TcSearchResponse>(
       `${TC_API}/sentencias?filter=${filter}`,
       {},

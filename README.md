@@ -3,7 +3,7 @@
 Conector **MCP** de derecho chileno para Claude, Cursor y apps compatibles.
 
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.7.3
+**Versión:** 1.7.4
 
 ## Matriz de honestidad (qué trae cada tool)
 
@@ -80,8 +80,9 @@ MCP: `http://localhost:3000/mcp`
 | `WARMUP_ON_BOOT` | `1` (default) / `0` |
 | `LEYCHILE_MIN_INTERVAL_MS` | Intervalo mínimo entre requests LeyChile |
 | `CIRCUIT_OPEN_MS` / `CIRCUIT_THRESHOLD` | Circuit breaker |
-| `SEARCH_TOOL_TIMEOUT_MS` | Tope total de búsquedas standalone (default 15s) |
-| `FETCH_TIMEOUT_MS` / `TC_TIMEOUT_MS` / `SPARQL_TIMEOUT_MS` | Topes upstream (12s / 10s / 10s) |
+| `SEARCH_TOOL_TIMEOUT_MS` | Tope total de búsquedas standalone (default 22s) |
+| `FETCH_TIMEOUT_MS` / `TC_TIMEOUT_MS` / `SPARQL_TIMEOUT_MS` | Topes upstream (12s / 18s / 10s) |
+| `JURIS_WEB_BUDGET_MS` / `WEB_SEARCH_TIMEOUT_MS` | Scrape web jurisprudencia (default 5s / 5s) |
 | `*_MAX_CONCURRENT` | Concurrencia por proveedor (web 3; TC/OpenAlex/etc. 2; LeyChile 1) |
 | `UNIFIED_BUDGET_MS` | Tope fan-out `buscar_derecho_chileno` (default 8s) |
 | `PACK_TOTAL_MS` | Tope global `investigar_tema` (default 12s) |

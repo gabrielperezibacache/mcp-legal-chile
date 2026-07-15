@@ -9,6 +9,16 @@ export interface WebHit {
   snippet?: string;
 }
 
+const WEB_SEARCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_TIMEOUT_MS ?? 5_000);
+
+export function hasPaidWebSearch(): boolean {
+  return Boolean(
+    process.env.SEARCH_API_KEY ||
+      process.env.SERPER_API_KEY ||
+      process.env.BRAVE_API_KEY,
+  );
+}
+
 function extractDuckDuckGoHits(html: string): WebHit[] {
   const hits: WebHit[] = [];
   const blockRe =
@@ -64,7 +74,7 @@ async function searchWithSerper(
       },
       body: JSON.stringify({ q: query, num: limit }),
     },
-    undefined,
+    WEB_SEARCH_TIMEOUT_MS,
     signal,
   );
   return (data.organic ?? [])
@@ -94,7 +104,7 @@ async function searchWithBrave(
         "X-Subscription-Token": key,
       },
     },
-    undefined,
+    WEB_SEARCH_TIMEOUT_MS,
     signal,
   );
   return (data.web?.results ?? [])
@@ -118,12 +128,19 @@ async function searchDuckDuckGo(
       headers: {
         Accept: "text/html",
         "Accept-Language": "es-CL,es;q=0.9",
+        "User-Agent":
+          process.env.WEB_SEARCH_USER_AGENT ??
+          "Mozilla/5.0 (compatible; MCP-Legal-Chile/1.7; +https://mcp-legal-chile.onrender.com)",
       },
     },
-    undefined,
+    WEB_SEARCH_TIMEOUT_MS,
     signal,
   );
-  return uniqueByUrl(extractDuckDuckGoHits(html)).slice(0, limit);
+  const hits = uniqueByUrl(extractDuckDuckGoHits(html)).slice(0, limit);
+  if (hits.length === 0) {
+    throw new Error("DuckDuckGo no devolvió resultados (posible bloqueo)");
+  }
+  return hits;
 }
 
 export async function searchWeb(
@@ -133,7 +150,7 @@ export async function searchWeb(
   throwIfAborted(opts.signal);
   const limit = opts.limit ?? 8;
   const q = opts.site ? `${query} site:${opts.site}` : query;
-  const cacheKey = `web:${q}:${limit}`;
+  const cacheKey = `web:v2:${q}:${limit}`;
   return webCache.getOrSet(cacheKey, async () => {
     throwIfAborted(opts.signal);
     const provider = (process.env.SEARCH_PROVIDER ?? "auto").toLowerCase();

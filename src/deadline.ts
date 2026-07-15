@@ -11,6 +11,20 @@ export function throwIfAborted(signal?: AbortSignal): void {
   }
 }
 
+/** True for deadline, AbortError, or aborted fetch — do not start slow fallbacks. */
+export function isAbortLikeError(error: unknown): boolean {
+  if (error instanceof DeadlineError) return true;
+  if (error instanceof DOMException && error.name === "AbortError") return true;
+  const name = error instanceof Error ? error.name : "";
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    name === "AbortError" ||
+    /aborted|AbortError|Timeout |DeadlineError|The operation was aborted/i.test(
+      message,
+    )
+  );
+}
+
 export function remainingMs(startedAt: number, budgetMs: number): number {
   return Math.max(0, budgetMs - (Date.now() - startedAt));
 }

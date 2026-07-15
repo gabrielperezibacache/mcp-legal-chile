@@ -137,11 +137,24 @@ export function stripHtml(html: string): string {
     .trim();
 }
 
+export function urlDedupeKey(url: string): string {
+  try {
+    const parsed = new URL(url);
+    // SPA routers (TC buscador) encode identity in the hash — keep it.
+    if (parsed.hash.startsWith("#/")) {
+      return parsed.toString();
+    }
+    return `${parsed.origin}${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
+}
+
 export function uniqueByUrl<T extends { url: string }>(items: T[]): T[] {
   const seen = new Set<string>();
   const out: T[] = [];
   for (const item of items) {
-    const key = item.url.split("#")[0];
+    const key = urlDedupeKey(item.url);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(item);
