@@ -150,6 +150,13 @@ function noteSuccess(key: HostKey): void {
   circuits[key].openedAt = null;
 }
 
+/** Record a 429 without opening the circuit (retries may still succeed). */
+function noteTransient429(key: HostKey): void {
+  metrics.markUpstreamError();
+  metrics.markUpstream429();
+  circuits[key].last429At = Date.now();
+}
+
 function noteFailure(key: HostKey, status?: number): void {
   metrics.markUpstreamError();
   if (status === 429) {
@@ -161,6 +168,17 @@ function noteFailure(key: HostKey, status?: number): void {
     circuits[key].openedAt = Date.now();
     metrics.markCircuitOpen();
   }
+}
+
+/**
+ * Count a terminal upstream failure after retries are exhausted.
+ * Mid-retry 429s should use noteTransient429 via withUpstreamLimit instead.
+ */
+export function noteTerminalUpstreamFailure(
+  url: string,
+  status?: number,
+): void {
+  noteFailure(upstreamHostKey(url), status);
 }
 
 /** Limit concurrency per provider and stagger starts without head-of-line blocking. */
@@ -182,7 +200,12 @@ export async function withUpstreamLimit<T>(
       const message = error instanceof Error ? error.message : String(error);
       const statusMatch = message.match(/HTTP (\d+)/);
       const status = statusMatch ? Number(statusMatch[1]) : undefined;
-      noteFailure(key, status);
+      // Do not open the circuit on mid-attempt 429 — fetchTextWithRetry may recover.
+      if (status === 429) {
+        noteTransient429(key);
+      } else {
+        noteFailure(key, status);
+      }
       throw error;
     }
   } finally {

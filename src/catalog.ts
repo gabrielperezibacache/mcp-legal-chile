@@ -20,7 +20,15 @@ export const HOT_NORMAS: Array<{
     label: "Código Penal",
   },
   {
-    aliases: ["codigo del trabajo", "código del trabajo", "ct", "codigo trabajo"],
+    aliases: [
+      "codigo del trabajo",
+      "código del trabajo",
+      "ct",
+      "codigo trabajo",
+      "despido injustificado",
+      "indemnizacion por despido",
+      "indemnización por despido",
+    ],
     idNorma: "207436",
     label: "Código del Trabajo",
   },

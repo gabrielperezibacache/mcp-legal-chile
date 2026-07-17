@@ -4,7 +4,7 @@ Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps 
 
 **Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.11.0
+**Versión:** 1.11.1
 
 ## Proyecto libre
 
@@ -66,7 +66,7 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | Artículo cold (sin 429) | &lt; 5 s | LeyChile puede rate-limitar |
 | `buscar_legislacion` | &lt; 4 s | SPARQL BCN |
 | `buscar_derecho_chileno` (parcial OK) | &lt; 8 s | |
-| `investigar_tema` (parcial OK) | &lt; **12 s** | Tope duro `PACK_TOTAL_MS` |
+| `investigar_tema` (parcial OK) | &lt; **18 s** | Tope duro `PACK_TOTAL_MS` (default 18s; ~11s por fuente) |
 | Éxito XML LeyChile (24h, con caché) | &gt; 95% | |
 
 Métricas en vivo: `GET /metrics`
@@ -77,8 +77,10 @@ Métricas en vivo: `GET /metrics`
 - Doctrina OA: ranking por relevancia, abstracts (backfill Crossref), enrich SciELO
 - `citar_jurisprudencia` con considerando (TC o texto pegado)
 - Caché en memoria (Redis opcional)
-- Rate limit / circuit breaker por proveedor
+- Rate limit / circuit breaker **por proveedor** (LeyChile 429 no abre el circuito de doctrina/OpenAlex)
 - Warmup `/warmup` + cron keep-alive
+
+> **Nota clientes MCP (Hermes, etc.):** un mensaje global tipo «MCP unreachable» tras ~3 errores suele ser **protección del cliente**, no del servidor. En el servidor los circuitos son por host; ante 429 de LeyChile las tools de texto devuelven markdown útil (URL oficial + reintento) sin marcar `isError` cuando es posible.
 
 ## Inicio rápido
 
@@ -102,7 +104,8 @@ MCP: `http://localhost:3000/mcp`
 | `SEARCH_TOOL_TIMEOUT_MS` | Tope búsquedas standalone (default 22s) |
 | `JURIS_WEB_BUDGET_MS` / `WEB_SEARCH_TIMEOUT_MS` | Búsqueda web libre (DDG) |
 | `WEB_FAIL_CACHE_MS` | Enfriamiento tras bloqueo DDG (default 180s) |
-| `PACK_TOTAL_MS` | Tope `investigar_tema` (default 12s) |
+| `PACK_TOTAL_MS` | Tope `investigar_tema` (default 18s) |
+| `PACK_TIMEOUT_MS` | Timeout por fuente en el pack (default ~11s) |
 
 ## Deploy
 

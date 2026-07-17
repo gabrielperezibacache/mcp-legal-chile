@@ -2,8 +2,11 @@ import type { CitationResult, SearchResponse } from "../types.js";
 import { resolveHotNorma } from "../catalog.js";
 import { sparqlCache } from "../cache.js";
 import {
+  decodeHtmlEntities,
   escapeSparqlString,
   fetchJson,
+  fetchText,
+  stripHtml,
   uniqueByUrl,
 } from "../util.js";
 
@@ -138,11 +141,133 @@ function bindingsToResults(
   ).slice(0, limit);
 }
 
+function buildTitleFilterSparql(
+  terms: string[],
+  mode: "and" | "or",
+  limit: number,
+): string {
+  const filters =
+    mode === "and"
+      ? terms
+          .map(
+            (t) =>
+              `FILTER(CONTAINS(LCASE(STR(?title)), "${escapeSparqlString(t)}"))`,
+          )
+          .join("\n  ")
+      : `FILTER(${terms
+          .map(
+            (t) =>
+              `CONTAINS(LCASE(STR(?title)), "${escapeSparqlString(t)}")`,
+          )
+          .join(" || ")})`;
+
+  return `
+PREFIX bcnnorms: <http://datos.bcn.cl/ontologies/bcn-norms#>
+PREFIX dc: <http://purl.org/dc/elements/1.1/>
+
+SELECT DISTINCT ?norma ?title ?number ?date ?code
+WHERE {
+  ?norma a bcnnorms:Norm .
+  ?norma dc:title ?title .
+  OPTIONAL { ?norma bcnnorms:hasNumber ?number }
+  OPTIONAL { ?norma bcnnorms:publishDate ?date }
+  OPTIONAL { ?norma bcnnorms:leychileCode ?code }
+  ${filters}
+}
+ORDER BY DESC(?date)
+LIMIT ${Math.min(Math.max(limit * 3, 12), 30)}
+`.trim();
+}
+
+/** Parse LeyChile buscador HTML for idNorma links (exported for offline tests). */
+export function parseLeyChileBuscadorHtml(
+  html: string,
+  limit = 8,
+): CitationResult[] {
+  const results: CitationResult[] = [];
+  const seen = new Set<string>();
+  const re =
+    /href=["']([^"']*idNorma=(\d+)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) && results.length < limit) {
+    const code = match[2]!;
+    if (seen.has(code)) continue;
+    seen.add(code);
+    const title = stripHtml(decodeHtmlEntities(match[3] ?? "")).slice(0, 200);
+    if (!title || title.length < 4) continue;
+    results.push({
+      source: "legislacion",
+      title,
+      citation: title,
+      url: `https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
+      publisher: "Biblioteca del Congreso Nacional / LeyChile",
+      id: code,
+      evidence: "metadata",
+      metadata: {
+        integrity: "candidate",
+        leychileCode: code,
+        provider: "leychile_buscador",
+      },
+    });
+  }
+  // Fallback: bare idNorma URLs without anchor text
+  if (!results.length) {
+    const bare = html.matchAll(/idNorma=(\d+)/gi);
+    for (const m of bare) {
+      const code = m[1]!;
+      if (seen.has(code)) continue;
+      seen.add(code);
+      results.push({
+        source: "legislacion",
+        title: `Norma idNorma ${code}`,
+        citation: `idNorma ${code}`,
+        url: `https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
+        publisher: "Biblioteca del Congreso Nacional / LeyChile",
+        id: code,
+        evidence: "metadata",
+        metadata: {
+          integrity: "candidate",
+          leychileCode: code,
+          provider: "leychile_buscador",
+        },
+      });
+      if (results.length >= limit) break;
+    }
+  }
+  return results;
+}
+
+async function searchLeyChileBuscador(
+  query: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<CitationResult[]> {
+  const url = `https://www.bcn.cl/leychile/consulta/buscador?termino=${encodeURIComponent(query)}`;
+  const html = await fetchText(
+    url,
+    {
+      headers: {
+        Accept: "text/html,*/*",
+        "Accept-Language": "es-CL,es;q=0.9",
+      },
+    },
+    SPARQL_TIMEOUT_MS,
+    signal,
+  );
+  return parseLeyChileBuscadorHtml(html, limit);
+}
+
 export async function searchLegislacion(
   query: string,
   limit = 8,
   opts: { signal?: AbortSignal } = {},
 ): Promise<SearchResponse> {
+  const searchUrls = {
+    leyChile: `https://www.bcn.cl/leychile/consulta/buscador?termino=${encodeURIComponent(query)}`,
+    datosAbiertos: "https://datos.bcn.cl/es/",
+  };
+  const warnings: string[] = [];
+
   const hot = resolveHotNorma(query);
   if (hot) {
     const byId = await getNorma({ leychileCode: hot.idNorma });
@@ -173,54 +298,91 @@ export async function searchLegislacion(
       source: "legislacion",
       results: [],
       warnings: ["La consulta es demasiado corta o genérica."],
-      searchUrls: {
-        leyChile: `https://www.bcn.cl/leychile/consulta/buscador?termino=${encodeURIComponent(query)}`,
-      },
+      searchUrls,
     };
   }
 
-  // Prefer a lean query: title match + key fields only (faster on BCN).
-  const filters = terms
-    .map(
-      (t) =>
-        `FILTER(CONTAINS(LCASE(STR(?title)), "${escapeSparqlString(t)}"))`,
-    )
-    .join("\n  ");
+  // 1) SPARQL AND on title terms
+  let results: CitationResult[] = [];
+  try {
+    const data = await runSparql(
+      buildTitleFilterSparql(terms, "and", limit),
+      opts.signal,
+    );
+    results = bindingsToResults(data.results.bindings, limit);
+  } catch (error) {
+    warnings.push(
+      `SPARQL BCN: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
-  const sparql = `
-PREFIX bcnnorms: <http://datos.bcn.cl/ontologies/bcn-norms#>
-PREFIX dc: <http://purl.org/dc/elements/1.1/>
+  // 2) SPARQL OR (more permissive for natural language)
+  if (!results.length && terms.length > 1) {
+    try {
+      const data = await runSparql(
+        buildTitleFilterSparql(terms, "or", limit),
+        opts.signal,
+      );
+      results = bindingsToResults(data.results.bindings, limit);
+      if (results.length) {
+        warnings.push(
+          "Resultados SPARQL con coincidencia parcial (OR) en el título; verifica relevancia.",
+        );
+      }
+    } catch (error) {
+      warnings.push(
+        `SPARQL OR: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 
-SELECT DISTINCT ?norma ?title ?number ?date ?code
-WHERE {
-  ?norma a bcnnorms:Norm .
-  ?norma dc:title ?title .
-  OPTIONAL { ?norma bcnnorms:hasNumber ?number }
-  OPTIONAL { ?norma bcnnorms:publishDate ?date }
-  OPTIONAL { ?norma bcnnorms:leychileCode ?code }
-  ${filters}
-}
-ORDER BY DESC(?date)
-LIMIT ${Math.min(Math.max(limit * 3, 12), 30)}
-`.trim();
+  // 3) Single longest term
+  if (!results.length && terms.length > 1) {
+    const longest = [...terms].sort((a, b) => b.length - a.length)[0]!;
+    try {
+      const data = await runSparql(
+        buildTitleFilterSparql([longest], "and", limit),
+        opts.signal,
+      );
+      results = bindingsToResults(data.results.bindings, limit);
+      if (results.length) {
+        warnings.push(
+          `Resultados filtrados por el término «${longest}»; verifica relevancia.`,
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }
 
-  const data = await runSparql(sparql, opts.signal);
-  const results = bindingsToResults(data.results.bindings, limit);
+  // 4) LeyChile HTML buscador (free public search)
+  if (!results.length) {
+    try {
+      results = await searchLeyChileBuscador(query, limit, opts.signal);
+      if (results.length) {
+        warnings.push(
+          "Resultados desde el buscador web de LeyChile (metadata); confirma en la URL oficial.",
+        );
+      }
+    } catch (error) {
+      warnings.push(
+        `Buscador LeyChile: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  if (!results.length) {
+    warnings.push(
+      "No se encontraron normas. Prueba el número de ley (p. ej. 19628) o un alias (Código del Trabajo).",
+    );
+  }
 
   return {
     query,
     source: "legislacion",
     results,
-    searchUrls: {
-      leyChile: `https://www.bcn.cl/leychile/consulta/buscador?termino=${encodeURIComponent(query)}`,
-      datosAbiertos: "https://datos.bcn.cl/es/",
-    },
-    warnings:
-      results.length === 0
-        ? [
-            "No se encontraron normas en el endpoint SPARQL de la BCN. Prueba con el número de ley (p. ej. 19628).",
-          ]
-        : undefined,
+    searchUrls,
+    warnings: warnings.length ? warnings : undefined,
   };
 }
 

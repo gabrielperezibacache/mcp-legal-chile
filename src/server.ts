@@ -31,6 +31,7 @@ import {
 import {
   ArticleNotFoundError,
   findIncisoOrLiteral,
+  LeyChileRateLimitError,
   LeyChileXmlError,
   parseNormaTexto,
   requireArticulo,
@@ -39,7 +40,7 @@ import {
 import type { SearchResponse } from "./types.js";
 import { formatResultsJson } from "./util.js";
 
-const VERSION = "1.11.0";
+const VERSION = "1.11.1";
 /** Must exceed TC keyword latency (often 6–14s) without cascading into slow web scrape. */
 const SEARCH_TOOL_TIMEOUT_MS = Number(
   process.env.SEARCH_TOOL_TIMEOUT_MS ?? 22_000,
@@ -94,7 +95,9 @@ function formatLegalExtractionError(error: unknown, idNorma: string): string {
         ? "Formato XML no soportado por el parser."
         : error instanceof LeyChileXmlError
           ? "XML LeyChile inválido o no disponible."
-          : "No se pudo extraer texto oficial desde LeyChile.";
+          : error instanceof LeyChileRateLimitError
+            ? "LeyChile rate-limit temporal (HTTP 429)."
+            : "No se pudo extraer texto oficial desde LeyChile.";
 
   return [
     title,
@@ -103,6 +106,25 @@ function formatLegalExtractionError(error: unknown, idNorma: string): string {
     `XML oficial: ${xml}`,
     "No inventes el contenido: verifica manualmente o usa obtener_texto_norma modo=indice para ver artículos detectados.",
   ].join("\n");
+}
+
+/** Soft 429: useful markdown without isError so MCP clients (e.g. Hermes) do not trip global unreachable. */
+function legalExtractionFailure(error: unknown, idNorma: string) {
+  const code = idNorma.replace(/\D/g, "");
+  const official = `https://www.bcn.cl/leychile/navegar?idNorma=${code}`;
+  if (error instanceof LeyChileRateLimitError) {
+    const sec = Math.max(1, Math.ceil(error.retryAfterMs / 1000));
+    return okText(
+      [
+        "LeyChile está limitando temporalmente las solicitudes (HTTP 429).",
+        `Reintenta en ~${sec}s. Mientras tanto usa la URL oficial (no inventes el texto).`,
+        `Fuente oficial: ${official}`,
+        `XML: https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
+        `Detalle: ${error.message}`,
+      ].join("\n"),
+    );
+  }
+  return fail(formatLegalExtractionError(error, idNorma));
 }
 
 async function timed<T>(name: string, fn: () => Promise<T>): Promise<T> {
@@ -130,7 +152,7 @@ export function createServer(): McpServer {
     {
       title: "Buscar legislación chilena",
       description:
-        "Busca normativa chilena en BCN / LeyChile. Para texto íntegro usa obtener_texto_norma / obtener_articulo.",
+        "Busca normativa chilena en BCN/LeyChile: número de ley, aliases (p. ej. Código del Trabajo) o lenguaje natural. Fallback: SPARQL permisivo + buscador HTML LeyChile. Para texto íntegro usa obtener_texto_norma / obtener_articulo.",
       inputSchema: {
         consulta: z.string().min(2),
         limite: limitSchema,
@@ -301,7 +323,7 @@ export function createServer(): McpServer {
           ].join("\n"),
         );
       } catch (error) {
-        return fail(formatLegalExtractionError(error, id_norma));
+        return legalExtractionFailure(error, id_norma);
       }
     },
   );
@@ -357,7 +379,7 @@ export function createServer(): McpServer {
           ].join("\n"),
         );
       } catch (error) {
-        return fail(formatLegalExtractionError(error, id_norma));
+        return legalExtractionFailure(error, id_norma);
       }
     },
   );
@@ -416,7 +438,7 @@ export function createServer(): McpServer {
           ].join("\n"),
         );
       } catch (error) {
-        return fail(formatLegalExtractionError(error, id_norma));
+        return legalExtractionFailure(error, id_norma);
       }
     },
   );
@@ -488,7 +510,7 @@ export function createServer(): McpServer {
         }
         return okText(quote.markdown);
       } catch (error) {
-        return fail(formatLegalExtractionError(error, id_norma));
+        return legalExtractionFailure(error, id_norma);
       }
     },
   );

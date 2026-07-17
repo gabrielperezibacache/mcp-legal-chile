@@ -28,7 +28,30 @@ import { uniqueByUrl } from "../util.js";
 import { searchWeb, webHitsToCitations } from "./websearch.js";
 
 /** Fail-fast web scrape budget so DDG/datacenter blocks never eat the tool deadline. */
-const JURIS_WEB_BUDGET_MS = Number(process.env.JURIS_WEB_BUDGET_MS ?? 5_000);
+const JURIS_WEB_BUDGET_MS = Number(process.env.JURIS_WEB_BUDGET_MS ?? 6_500);
+
+const WEB_LIMITED_HINT =
+  "Búsqueda web temporalmente limitada; portales oficiales abajo.";
+
+const PJUD_NO_API_HINT =
+  "PJUD no tiene API abierta; se entregan solo enlaces candidatos para verificación manual.";
+
+function friendlyWebSearchWarning(raw: string, site?: string): string {
+  if (/Circuito abierto|HTTP 429|fetch failed|aborted|timeout|ECONN|ENOTFOUND/i.test(raw)) {
+    return site
+      ? `${WEB_LIMITED_HINT} (${site})`
+      : WEB_LIMITED_HINT;
+  }
+  return site ? `Búsqueda libre en ${site} limitada: ${raw}` : raw;
+}
+
+function friendlyPjudResolverWarning(error: unknown): string {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (/fetch failed|aborted|Circuito abierto|HTTP 429|timeout|ECONN/i.test(msg)) {
+    return PJUD_NO_API_HINT;
+  }
+  return `PJUD búsqueda: ${msg}`;
+}
 
 const QUERY_STOPWORDS = new Set([
   "a",
@@ -504,9 +527,7 @@ export async function resolverRol(opts: {
         if (results.length >= (opts.limite ?? 5)) break;
       }
     } catch (error) {
-      warnings.push(
-        `PJUD búsqueda: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      warnings.push(friendlyPjudResolverWarning(error));
     }
   }
 
@@ -837,7 +858,10 @@ export async function searchJurisprudencia(
               if (isAbortLikeError(error)) throw error;
               return {
                 citations: [] as CitationResult[],
-                warning: `Búsqueda libre en ${site} limitada: ${error instanceof Error ? error.message : String(error)}`,
+                warning: friendlyWebSearchWarning(
+                  error instanceof Error ? error.message : String(error),
+                  site,
+                ),
               };
             }
           });
@@ -851,15 +875,11 @@ export async function searchJurisprudencia(
       }
     } catch (error) {
       if (opts.signal?.aborted) throw error;
-      if (isAbortLikeError(error)) {
-        warnings.push(
-          `Búsqueda web libre cortada (${error instanceof Error ? error.message : String(error)}). Usa portales oficiales o pegá el texto en citar_jurisprudencia.`,
-        );
-      } else {
-        warnings.push(
-          `Búsqueda web libre no disponible: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      warnings.push(
+        friendlyWebSearchWarning(
+          error instanceof Error ? error.message : String(error),
+        ),
+      );
     }
   }
 
@@ -870,6 +890,7 @@ export async function searchJurisprudencia(
     }),
   ).slice(0, limit);
 
+  // Never return a hard empty set: always include portal stubs for manual verification.
   if (deduped.length === 0) {
     warnings.push(
       "No se indexaron fallos automáticamente. Portales oficiales incluidos. TC: obtener_fallo_tc / citar_jurisprudencia. PJUD: pegá el texto en citar_jurisprudencia.",

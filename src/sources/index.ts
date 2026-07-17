@@ -16,9 +16,13 @@ import {
   searchTribunalConstitucional,
 } from "./jurisprudencia.js";
 import {
+  searchLegislacion,
+} from "./legislacion.js";
+export {
   estadoNorma,
   getNorma,
   normasRelacionadas,
+  parseLeyChileBuscadorHtml,
   searchLegislacion,
 } from "./legislacion.js";
 import { citarJurisprudencia } from "./jurisQuote.js";
@@ -29,17 +33,13 @@ import { remainingMs, runWithDeadline } from "../deadline.js";
 export {
   citarJurisprudencia,
   citarTextoLegal,
-  estadoNorma,
-  getNorma,
   investigarTema,
-  normasRelacionadas,
   obtenerFalloTc,
   resolverDictamen,
   resolverRol,
   resolveRolToMarkdown,
   searchDictamenes,
   searchJurisprudencia,
-  searchLegislacion,
   searchTribunalConstitucional,
 };
 

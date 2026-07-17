@@ -1,8 +1,25 @@
 import { XMLParser } from "fast-xml-parser";
 import { xmlCache } from "../cache.js";
-import { fetchTextWithRetry } from "../util.js";
+import { fetchTextWithRetry, HttpStatusError } from "../util.js";
 
 const NS_STRIP = /\{[^}]+\}/g;
+
+/** Short negative cache so a 429 does not hammer LeyChile for the same idNorma. */
+const XML_429_CACHE_MS = Number(process.env.LEYCHILE_429_CACHE_MS ?? 60_000);
+const xml429Until = new Map<string, number>();
+
+export class LeyChileRateLimitError extends Error {
+  idNorma: string;
+  retryAfterMs: number;
+  constructor(idNorma: string, retryAfterMs: number) {
+    super(
+      `LeyChile rate-limit (429) para idNorma=${idNorma}. Reintenta en ~${Math.ceil(retryAfterMs / 1000)}s.`,
+    );
+    this.name = "LeyChileRateLimitError";
+    this.idNorma = idNorma;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
 
 export interface NormaPart {
   tipo: string;
@@ -218,24 +235,44 @@ export async function fetchNormaXml(
   } = {},
 ): Promise<string> {
   const code = idNorma.replace(/\D/g, "");
+  const blockedUntil = xml429Until.get(code);
+  if (blockedUntil && Date.now() < blockedUntil) {
+    throw new LeyChileRateLimitError(code, blockedUntil - Date.now());
+  }
   return xmlCache.getOrSet(`xml:${code}`, async () => {
     const xmlUrl = `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
-    const xml = await fetchTextWithRetry(
-      xmlUrl,
-      {
-        headers: {
-          Accept: "application/xml,text/xml,*/*",
-          "Accept-Language": "es-CL,es;q=0.9",
+    try {
+      const xml = await fetchTextWithRetry(
+        xmlUrl,
+        {
+          headers: {
+            Accept: "application/xml,text/xml,*/*",
+            "Accept-Language": "es-CL,es;q=0.9",
+          },
         },
-      },
-      opts.timeoutMs ?? 60_000,
-      opts.retries ?? 4,
-      opts.signal,
-    );
-    if (!xml.includes("<Norma") && !xml.includes("normaId")) {
-      throw new LeyChileXmlError(code, "la respuesta no contiene un nodo Norma");
+        opts.timeoutMs ?? 60_000,
+        opts.retries ?? 4,
+        opts.signal,
+      );
+      if (!xml.includes("<Norma") && !xml.includes("normaId")) {
+        throw new LeyChileXmlError(code, "la respuesta no contiene un nodo Norma");
+      }
+      xml429Until.delete(code);
+      return xml;
+    } catch (error) {
+      if (
+        (error instanceof HttpStatusError && error.status === 429) ||
+        error instanceof LeyChileRateLimitError
+      ) {
+        const wait =
+          error instanceof HttpStatusError
+            ? error.retryAfterMs ?? XML_429_CACHE_MS
+            : error.retryAfterMs;
+        xml429Until.set(code, Date.now() + wait);
+        throw new LeyChileRateLimitError(code, wait);
+      }
+      throw error;
     }
-    return xml;
   });
 }
 

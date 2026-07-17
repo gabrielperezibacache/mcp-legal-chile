@@ -1,6 +1,6 @@
 {
   "name": "mcp-legal-chile",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "description": "Conector MCP libre y gratuito del derecho chileno: legislación, jurisprudencia, doctrina y dictámenes con citas verificables.",
   "type": "module",
   "main": "dist/index.js",

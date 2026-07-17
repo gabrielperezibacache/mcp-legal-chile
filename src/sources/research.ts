@@ -65,9 +65,10 @@ export async function investigarTema(
   limitePorFuente = 3,
 ): Promise<string> {
   const startedAt = Date.now();
-  const totalMs = Number(process.env.PACK_TOTAL_MS ?? 12_000);
+  const totalMs = Number(process.env.PACK_TOTAL_MS ?? 18_000);
   const perSourceMs = Number(
-    process.env.PACK_TIMEOUT_MS ?? Math.min(6_000, Math.floor(totalMs * 0.55)),
+    process.env.PACK_TIMEOUT_MS ??
+      Math.min(11_000, Math.floor(totalMs * 0.65)),
   );
   const maxChars = Number(process.env.PACK_MAX_CHARS ?? 10_000);
   const articleQuoteChars = Number(process.env.PACK_ARTICLE_CHARS ?? 1_200);
@@ -313,7 +314,14 @@ export async function investigarTema(
       sections.push("", `## ${title}`);
       if (result.status !== "fulfilled") {
         pending.push(label);
-        sections.push(`- Fuente incompleta: ${String(result.reason)}`);
+        const reason =
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason);
+        const soft = /aborted|timeout|deadline|Deadline/i.test(reason)
+          ? `Fuente incompleta por timeout (~${perSourceMs}ms); el pack sigue con lo disponible. Reintenta la fuente sola o sube PACK_TIMEOUT_MS.`
+          : `Fuente incompleta: ${reason}`;
+        sections.push(`- ${soft}`);
         return;
       }
       const sealed = sealSearchResponse(result.value);
@@ -366,7 +374,7 @@ export async function investigarTema(
     sections.push("", "## 5. Lagunas / verificación pendiente");
     if (pending.length) {
       sections.push(
-        `- Fuentes incompletas por timeout/error: ${pending.join(", ")}`,
+        `- Fuentes incompletas por timeout/error (respuesta parcial OK): ${pending.join(", ")}. Puedes consultar cada fuente con su tool dedicada.`,
       );
     }
     sections.push(
