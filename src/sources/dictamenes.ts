@@ -22,16 +22,25 @@ export async function searchDictamenes(
   const dictamenNumber = extractDictamenNumber(query);
 
   if (dictamenNumber) {
+    const cgrSearch = `https://www.contraloria.cl/web/cgr/dictamenes-y-pronunciamientos-juridicos?p_p_id=buscadordictamenes_WAR_buscadordictamenesportlet&p_p_lifecycle=0&_buscadordictamenes_WAR_buscadordictamenesportlet_numero=${encodeURIComponent(dictamenNumber)}`;
+    const ddgDeep = `https://duckduckgo.com/?q=${encodeURIComponent(`dictamen ${dictamenNumber} site:contraloria.cl`)}`;
     results.push({
       source: "dictamenes",
-      title: `Dictamen N° ${dictamenNumber} (portal CGR)`,
-      citation: `Dictamen N° ${dictamenNumber}`,
-      url: "https://www.contraloria.cl/web/cgr/dictamenes-y-pronunciamientos-juridicos",
+      title: `[Candidato · verificar] Dictamen N° ${dictamenNumber} — búsqueda portal CGR`,
+      citation: `Dictamen N° ${dictamenNumber} (enlace de búsqueda; texto no recuperado)`,
+      url: cgrSearch,
+      secondaryUrl: ddgDeep,
       publisher: "Contraloría General de la República",
       id: dictamenNumber,
       evidence: "link_only",
       summary:
-        "Abre el buscador oficial de la CGR e ingresa el número del dictamen para obtener el texto íntegro.",
+        "NO es el texto del dictamen. Solo un enlace de búsqueda al portal CGR por número. Confirma existencia y texto íntegro en Contraloría antes de citar.",
+      metadata: {
+        integrity: "candidate",
+        portalGenerico:
+          "https://www.contraloria.cl/web/cgr/dictamenes-y-pronunciamientos-juridicos",
+        busquedaSugerida: ddgDeep,
+      },
     });
   }
 

@@ -114,6 +114,7 @@ export function upstreamHostKey(url: string): HostKey {
     if (host.includes("tcchile.cl")) return "tc";
     if (host.includes("openalex.org")) return "openalex";
     if (host.includes("crossref.org")) return "crossref";
+    if (host.includes("doaj.org")) return "crossref"; // same polite OA throttle class
     if (host.includes("scielo")) return "scielo";
   } catch {
     /* ignore */

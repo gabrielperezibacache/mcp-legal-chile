@@ -6,6 +6,8 @@ export interface ChileanCitationInput {
   letra?: string;
   rol?: string;
   tribunal?: string;
+  /** E.g. "15º", "décimo quinto", "15" */
+  considerando?: string;
   dictamen?: string;
   anio?: string;
   titulo?: string;
@@ -73,9 +75,29 @@ export function formatChileanCitation(input: ChileanCitationInput): {
   }
 
   if (input.rol) {
-    const tribunal = input.tribunal ? `${input.tribunal}, ` : "";
-    const citation = `${tribunal}rol ${input.rol}${input.anio ? ` (${input.anio})` : ""}`;
-    return { citation, url: input.url, notes };
+    const bits: string[] = [];
+    if (input.tribunal) bits.push(input.tribunal);
+    // For jurisprudence, `tipo` is the resolution kind (Sentencia, Auto, etc.).
+    if (input.tipo) bits.push(input.tipo);
+    bits.push(`rol ${input.rol}`);
+    if (input.considerando) {
+      const raw = input.considerando.trim();
+      const cons = /^\d+$/.test(raw)
+        ? `${raw}º`
+        : raw.replace(/\bconsiderandos?\b/i, "").trim();
+      bits.push(`considerando ${cons}`);
+    }
+    const citation = `${bits.join(", ")}${input.anio ? ` (${input.anio})` : ""}`;
+    return {
+      citation,
+      url: input.url,
+      notes: [
+        ...notes,
+        input.considerando
+          ? "Cita jurisprudencial con considerando: verifica el texto oficial (PDF/ficha)."
+          : "Cita jurisprudencial: sin considerando, no afirmes ratio decidendi textual.",
+      ],
+    };
   }
 
   const parts: string[] = [];

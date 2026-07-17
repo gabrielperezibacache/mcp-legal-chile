@@ -1,7 +1,9 @@
 import type { CitationResult } from "../types.js";
+import { formatChileanCitation } from "../citation.js";
 import { webCache } from "../cache.js";
 import { throwIfAborted } from "../deadline.js";
-import { fetchJson, fetchText, stripHtml, uniqueByUrl } from "../util.js";
+import { parseCaseIdentifiers } from "../parsers.js";
+import { fetchText, stripHtml, uniqueByUrl } from "../util.js";
 
 export interface WebHit {
   title: string;
@@ -10,13 +12,23 @@ export interface WebHit {
 }
 
 const WEB_SEARCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_TIMEOUT_MS ?? 5_000);
+/** Short TTL so a DDG block does not burn every tool deadline for minutes. */
+const WEB_FAIL_CACHE_MS = Number(process.env.WEB_FAIL_CACHE_MS ?? 180_000);
 
-export function hasPaidWebSearch(): boolean {
-  return Boolean(
-    process.env.SEARCH_API_KEY ||
-      process.env.SERPER_API_KEY ||
-      process.env.BRAVE_API_KEY,
-  );
+const failCache = new Map<string, number>();
+
+function isFailCached(key: string): boolean {
+  const until = failCache.get(key);
+  if (!until) return false;
+  if (Date.now() > until) {
+    failCache.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function markFail(key: string): void {
+  failCache.set(key, Date.now() + WEB_FAIL_CACHE_MS);
 }
 
 function extractDuckDuckGoHits(html: string): WebHit[] {
@@ -55,68 +67,31 @@ function extractDuckDuckGoHits(html: string): WebHit[] {
   return hits;
 }
 
-async function searchWithSerper(
-  query: string,
-  limit: number,
-  signal?: AbortSignal,
-): Promise<WebHit[]> {
-  const key = process.env.SEARCH_API_KEY ?? process.env.SERPER_API_KEY;
-  if (!key) throw new Error("no search api key");
-  const data = await fetchJson<{
-    organic?: Array<{ title?: string; link?: string; snippet?: string }>;
-  }>(
-    "https://google.serper.dev/search",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-API-KEY": key,
-      },
-      body: JSON.stringify({ q: query, num: limit }),
-    },
-    WEB_SEARCH_TIMEOUT_MS,
-    signal,
-  );
-  return (data.organic ?? [])
-    .filter((r) => r.title && r.link)
-    .map((r) => ({
-      title: r.title!,
-      url: r.link!,
-      snippet: r.snippet,
-    }));
+function extractLiteHits(html: string): WebHit[] {
+  const hits: WebHit[] = [];
+  const re =
+    /<a[^>]*rel="nofollow"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+  const seen = new Set<string>();
+  while ((match = re.exec(html)) !== null) {
+    let url = match[1];
+    const title = stripHtml(match[2] ?? "");
+    try {
+      const parsed = new URL(url, "https://lite.duckduckgo.com");
+      const uddg = parsed.searchParams.get("uddg");
+      url = uddg ? decodeURIComponent(uddg) : parsed.toString();
+    } catch {
+      continue;
+    }
+    if (!url.startsWith("http") || seen.has(url)) continue;
+    if (/duckduckgo\.com/i.test(url)) continue;
+    seen.add(url);
+    hits.push({ title: title || url, url });
+  }
+  return hits;
 }
 
-async function searchWithBrave(
-  query: string,
-  limit: number,
-  signal?: AbortSignal,
-): Promise<WebHit[]> {
-  const key = process.env.BRAVE_API_KEY;
-  if (!key) throw new Error("no brave key");
-  const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limit}`;
-  const data = await fetchJson<{
-    web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
-  }>(
-    url,
-    {
-      headers: {
-        Accept: "application/json",
-        "X-Subscription-Token": key,
-      },
-    },
-    WEB_SEARCH_TIMEOUT_MS,
-    signal,
-  );
-  return (data.web?.results ?? [])
-    .filter((r) => r.title && r.url)
-    .map((r) => ({
-      title: r.title!,
-      url: r.url!,
-      snippet: r.description,
-    }));
-}
-
-async function searchDuckDuckGo(
+async function searchDuckDuckGoHtml(
   query: string,
   limit: number,
   signal?: AbortSignal,
@@ -130,19 +105,44 @@ async function searchDuckDuckGo(
         "Accept-Language": "es-CL,es;q=0.9",
         "User-Agent":
           process.env.WEB_SEARCH_USER_AGENT ??
-          "Mozilla/5.0 (compatible; MCP-Legal-Chile/1.7; +https://mcp-legal-chile.onrender.com)",
+          "Mozilla/5.0 (compatible; MCP-Legal-Chile/1.9; +https://mcp-legal-chile.onrender.com)",
       },
     },
     WEB_SEARCH_TIMEOUT_MS,
     signal,
   );
-  const hits = uniqueByUrl(extractDuckDuckGoHits(html)).slice(0, limit);
+  return uniqueByUrl(extractDuckDuckGoHits(html)).slice(0, limit);
+}
+
+async function searchDuckDuckGoLite(
+  query: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<WebHit[]> {
+  const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+  const html = await fetchText(
+    url,
+    {
+      headers: {
+        Accept: "text/html",
+        "Accept-Language": "es-CL,es;q=0.9",
+        "User-Agent":
+          process.env.WEB_SEARCH_USER_AGENT ??
+          "Mozilla/5.0 (compatible; MCP-Legal-Chile/1.9; +https://mcp-legal-chile.onrender.com)",
+      },
+    },
+    WEB_SEARCH_TIMEOUT_MS,
+    signal,
+  );
+  const hits = uniqueByUrl(extractLiteHits(html)).slice(0, limit);
   if (hits.length === 0) {
-    throw new Error("DuckDuckGo no devolvió resultados (posible bloqueo)");
+    // lite pages sometimes reuse classic classes
+    return uniqueByUrl(extractDuckDuckGoHits(html)).slice(0, limit);
   }
   return hits;
 }
 
+/** Free web search via DuckDuckGo HTML, then lite fallback (best-effort). */
 export async function searchWeb(
   query: string,
   opts: { site?: string; limit?: number; signal?: AbortSignal } = {},
@@ -150,34 +150,36 @@ export async function searchWeb(
   throwIfAborted(opts.signal);
   const limit = opts.limit ?? 8;
   const q = opts.site ? `${query} site:${opts.site}` : query;
-  const cacheKey = `web:v2:${q}:${limit}`;
+  const failKey = `webfail:${q}`;
+  if (isFailCached(failKey)) {
+    throw new Error(
+      "Búsqueda web libre en enfriamiento tras bloqueo/vacío reciente. Usa portales oficiales o citar_jurisprudencia con texto.",
+    );
+  }
+
+  const cacheKey = `web:v4:ddg:${q}:${limit}`;
   return webCache.getOrSet(cacheKey, async () => {
     throwIfAborted(opts.signal);
-    const provider = (process.env.SEARCH_PROVIDER ?? "auto").toLowerCase();
     try {
-      if (
-        provider === "serper" ||
-        (provider === "auto" &&
-          (process.env.SEARCH_API_KEY || process.env.SERPER_API_KEY))
-      ) {
-        return uniqueByUrl(await searchWithSerper(q, limit, opts.signal)).slice(
-          0,
-          limit,
+      const hits = await searchDuckDuckGoHtml(q, limit, opts.signal);
+      if (hits.length) return hits;
+      throw new Error("DuckDuckGo HTML vacío");
+    } catch (htmlError) {
+      throwIfAborted(opts.signal);
+      try {
+        const lite = await searchDuckDuckGoLite(q, limit, opts.signal);
+        if (lite.length) return lite;
+        markFail(failKey);
+        throw new Error(
+          `DuckDuckGo no devolvió resultados (posible bloqueo). ${htmlError instanceof Error ? htmlError.message : String(htmlError)}`,
         );
+      } catch (liteError) {
+        markFail(failKey);
+        throw liteError instanceof Error
+          ? liteError
+          : new Error(String(liteError));
       }
-      if (
-        provider === "brave" ||
-        (provider === "auto" && process.env.BRAVE_API_KEY)
-      ) {
-        return uniqueByUrl(await searchWithBrave(q, limit, opts.signal)).slice(
-          0,
-          limit,
-        );
-      }
-    } catch {
-      /* fall through to DDG */
     }
-    return searchDuckDuckGo(q, limit, opts.signal);
   });
 }
 
@@ -186,13 +188,44 @@ export function webHitsToCitations(
   source: CitationResult["source"],
   publisher: string,
 ): CitationResult[] {
-  return hits.map((hit) => ({
-    source,
-    title: hit.title,
-    citation: hit.title,
-    summary: hit.snippet,
-    url: hit.url,
-    publisher,
-    evidence: "link_only" as const,
-  }));
+  return hits.map((hit) => {
+    const ids = parseCaseIdentifiers(hit.title, hit.snippet ?? "");
+    const rol = ids.rol;
+    const tribunal = ids.tribunal;
+    const anio = ids.anio;
+    const tipo = ids.tipo ?? (rol ? "Sentencia" : undefined);
+    let citation: string;
+    if (rol) {
+      citation = formatChileanCitation({
+        tribunal: tribunal ?? publisher,
+        tipo,
+        rol,
+        anio,
+        url: hit.url,
+      }).citation;
+    } else {
+      const short = hit.title.replace(/\s+/g, " ").trim().slice(0, 140);
+      citation = short
+        ? `Candidato (verificar): ${short}`
+        : "Candidato (verificar): sin ROL parseado";
+    }
+    return {
+      source,
+      title: hit.title,
+      citation,
+      summary: hit.snippet,
+      url: hit.url,
+      publisher,
+      evidence: "link_only" as const,
+      rol,
+      tribunal,
+      rit: ids.rit,
+      ruc: ids.ruc,
+      metadata: {
+        anio,
+        tipo,
+        integrity: "candidate",
+      },
+    };
+  });
 }

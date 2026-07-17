@@ -27,6 +27,12 @@ test("matchTribunalPortal resuelve familia", () => {
   assert.equal(portal?.id, "familia");
 });
 
+test("matchTribunalPortal resuelve con acentos distintos", () => {
+  assert.equal(matchTribunalPortal("corte de apelaciones")?.id, "ca");
+  assert.equal(matchTribunalPortal("Juzgado de Garantía")?.id, "garantia");
+  assert.equal(matchTribunalPortal("garantia")?.id, "garantia");
+});
+
 test("tribunalSearchSites usa sitios del portal", () => {
   const sites = tribunalSearchSites("TDLC");
   assert.ok(sites.includes("tdlc.cl"));

@@ -1,13 +1,30 @@
+import {
+  assistantIntegrityBlock,
+  integrityLabel,
+  integrityOf,
+  sealSearchResponse,
+} from "../integrity.js";
+import {
+  citationReadyBlock,
+  nextStepsForSearch,
+  toBlockquote,
+} from "../present.js";
 import type { CitationResult, SearchResponse } from "../types.js";
 import {
   buildDoctrineRecord,
   dedupeDoctrineRecords,
+  enrichDoctrineQuery,
+  formatAuthorFromParts,
+  rankDoctrineRecords,
   type DoctrineRecord,
 } from "./doctrineShared.js";
+import { searchDoajDoctrine } from "./doaj.js";
 import {
+  CHILE_LEGAL_JOURNALS,
   inferCollectionFromDoi,
   issnsForCountry,
   LATAM_COUNTRY_LABELS,
+  LATAM_REFERENCE_JOURNALS,
   type LatamCountry,
 } from "./journalCatalog.js";
 import {
@@ -17,7 +34,7 @@ import {
   searchSciELOChile,
 } from "./scielo.js";
 import { throwIfAborted } from "../deadline.js";
-import { fetchJson, uniqueByUrl } from "../util.js";
+import { fetchJson, politeUrl, uniqueByUrl } from "../util.js";
 
 export type { DoctrineRecord } from "./doctrineShared.js";
 export {
@@ -103,6 +120,7 @@ function fromOpenAlex(work: OpenAlexWork): DoctrineRecord | null {
       ?.map((a) => a.author?.display_name)
       .filter((x): x is string => Boolean(x))
       .slice(0, 6) ?? [];
+  // buildDoctrineRecord normalizes "Given Family" → "Family, G."
   const journal = work.primary_location?.source?.display_name ?? undefined;
   const year = work.publication_year
     ? String(work.publication_year)
@@ -135,7 +153,7 @@ function fromCrossref(item: CrossrefItem): DoctrineRecord | null {
   if (!title) return null;
   const authors =
     item.author
-      ?.map((a) => [a.given, a.family].filter(Boolean).join(" "))
+      ?.map((a) => formatAuthorFromParts(a.given, a.family))
       .filter(Boolean)
       .slice(0, 6) ?? [];
   const year = String(
@@ -174,7 +192,7 @@ function toCitationResult(d: DoctrineRecord): CitationResult {
     secondaryUrl: d.pdfUrl,
     publisher: d.journal ?? "Doctrina académica",
     id: d.doi ?? d.scieloPid ?? d.openAlexId,
-    evidence: d.abstract ? "metadata" : "metadata",
+    evidence: "metadata",
     metadata: {
       citationApa: d.citationApa,
       citationChile: d.citationChile,
@@ -189,8 +207,109 @@ function toCitationResult(d: DoctrineRecord): CitationResult {
       scieloCollection: d.scieloCollection,
       country: d.country,
       provider: d.provider,
+      integrity: "candidate",
+      vinculante: false,
     },
   };
+}
+
+function catalogJournalNames(country?: LatamCountry): Set<string> {
+  const journals =
+    !country || country === "CL"
+      ? CHILE_LEGAL_JOURNALS
+      : LATAM_REFERENCE_JOURNALS.filter((j) => j.country === country);
+  return new Set(
+    journals.map((j) =>
+      j.name
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/\p{M}/gu, ""),
+    ),
+  );
+}
+
+function looksLikeScieloDoi(doi?: string): boolean {
+  if (!doi) return false;
+  const d = doi.replace(/^https?:\/\/doi\.org\//i, "");
+  return (
+    d.startsWith("10.4067/") ||
+    d.startsWith("10.1590/") ||
+    d.startsWith("10.22201/")
+  );
+}
+
+async function fetchCrossrefAbstract(
+  doi: string,
+  signal?: AbortSignal,
+): Promise<string | undefined> {
+  try {
+    const data = await fetchJson<{ message: CrossrefItem }>(
+      politeUrl(
+        `https://api.crossref.org/works/${encodeURIComponent(doi)}?select=abstract`,
+      ),
+      {},
+      8_000,
+      signal,
+    );
+    const abs = data.message.abstract;
+    return abs ? abs.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 900) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function backfillAbstracts(
+  records: DoctrineRecord[],
+  signal?: AbortSignal,
+): Promise<DoctrineRecord[]> {
+  const out: DoctrineRecord[] = [];
+  for (const r of records) {
+    if (r.abstract || !r.doi) {
+      out.push(r);
+      continue;
+    }
+    throwIfAborted(signal);
+    const abs = await fetchCrossrefAbstract(r.doi, signal);
+    out.push(abs ? { ...r, abstract: abs } : r);
+  }
+  return out;
+}
+
+async function enrichScieloHits(
+  records: DoctrineRecord[],
+  signal?: AbortSignal,
+  maxEnrich = 4,
+): Promise<DoctrineRecord[]> {
+  const out: DoctrineRecord[] = [];
+  let enriched = 0;
+  for (const r of records) {
+    const doi = r.doi;
+    if (
+      enriched < maxEnrich &&
+      r.provider !== "scielo" &&
+      doi &&
+      looksLikeScieloDoi(doi)
+    ) {
+      throwIfAborted(signal);
+      try {
+        const scielo = await obtenerArticuloPorDoiSciELO(
+          doi,
+          inferCollectionFromDoi(doi),
+        );
+        enriched += 1;
+        out.push({
+          ...scielo,
+          abstract: scielo.abstract ?? r.abstract,
+          openAlexId: r.openAlexId ?? scielo.openAlexId,
+        });
+        continue;
+      } catch {
+        /* keep original */
+      }
+    }
+    out.push(r);
+  }
+  return out;
 }
 
 async function searchOpenAlex(
@@ -198,9 +317,7 @@ async function searchOpenAlex(
   limit: number,
   signal?: AbortSignal,
 ): Promise<DoctrineRecord[]> {
-  const enriched = /\bderecho\b|\bchile\b|\bjurispruden/i.test(query)
-    ? query
-    : `${query} derecho Chile`;
+  const enriched = enrichDoctrineQuery(query, "CL");
   const params = new URLSearchParams({
     search: enriched,
     filter: "authorships.institutions.country_code:CL",
@@ -210,7 +327,7 @@ async function searchOpenAlex(
       "id,title,display_name,doi,publication_year,type,abstract_inverted_index,biblio,primary_location,authorships",
   });
   const data = await fetchJson<OpenAlexResponse>(
-    `https://api.openalex.org/works?${params}`,
+    politeUrl(`https://api.openalex.org/works?${params}`),
     {},
     undefined,
     signal,
@@ -226,13 +343,13 @@ async function searchCrossrefDoctrine(
   signal?: AbortSignal,
 ): Promise<DoctrineRecord[]> {
   const params = new URLSearchParams({
-    query: `${query} derecho Chile`,
+    query: enrichDoctrineQuery(query, "CL"),
     rows: String(Math.min(limit, 10)),
     select:
       "title,author,published,issued,container-title,volume,issue,page,DOI,URL,abstract",
   });
   const data = await fetchJson<{ message: { items: CrossrefItem[] } }>(
-    `https://api.crossref.org/works?${params}`,
+    politeUrl(`https://api.crossref.org/works?${params}`),
     {},
     undefined,
     signal,
@@ -252,18 +369,39 @@ export async function searchDoctrina(
     "Doctrina = fuente no vinculante. Preferir texto de LeyChile para normas.",
   ];
   if (opts.fast) {
-    warnings.push("Modo pack rápido: solo SciELO/OpenAlex (sin Crossref).");
+    warnings.push(
+      "Modo pack rápido: OpenAlex catálogo + DOAJ (sin Crossref ni enrich lento).",
+    );
   }
   const records: DoctrineRecord[] = [];
 
+  // 1) OpenAlex filtered by Chilean legal journal ISSNs (labeled via catalog).
   try {
     records.push(...(await searchSciELOChile(query, limit, opts.signal)));
   } catch (error) {
     warnings.push(
-      `SciELO Chile: ${error instanceof Error ? error.message : String(error)}`,
+      `Catálogo revistas Chile (OpenAlex): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
+  // 2) DOAJ open-access articles (free, no key).
+  if (records.length < limit) {
+    throwIfAborted(opts.signal);
+    try {
+      records.push(
+        ...(await searchDoajDoctrine(query, limit - records.length + 2, {
+          countryHint: "CL",
+          signal: opts.signal,
+        })),
+      );
+    } catch (error) {
+      warnings.push(
+        `DOAJ: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  // 3) Broader OpenAlex CL institutions.
   if (records.length < limit) {
     throwIfAborted(opts.signal);
     try {
@@ -277,6 +415,7 @@ export async function searchDoctrina(
     }
   }
 
+  // 4) Crossref (skip in fast pack mode).
   if (!opts.fast && records.length < limit) {
     throwIfAborted(opts.signal);
     try {
@@ -294,18 +433,29 @@ export async function searchDoctrina(
     }
   }
 
-  const merged = dedupeDoctrineRecords(records);
-  const sorted = [
-    ...merged.filter((r) => r.provider === "scielo"),
-    ...merged.filter((r) => r.provider !== "scielo"),
-  ];
-  const results = uniqueByUrl(sorted.map(toCitationResult)).slice(0, limit);
+  let merged = dedupeDoctrineRecords(records);
+  if (!opts.fast) {
+    merged = await backfillAbstracts(
+      merged.slice(0, Math.min(merged.length, limit + 4)),
+      opts.signal,
+    );
+    merged = await enrichScieloHits(merged, opts.signal, 4);
+    merged = dedupeDoctrineRecords(merged);
+  }
+
+  const ranked = rankDoctrineRecords(
+    merged,
+    query,
+    catalogJournalNames("CL"),
+  );
+  const results = uniqueByUrl(ranked.map(toCitationResult)).slice(0, limit);
 
   return {
     query,
     source: "doctrina",
     results,
     searchUrls: {
+      doaj: `https://doaj.org/search/articles?source=%7B%22query%22%3A%7B%22query_string%22%3A%7B%22query%22%3A%22${encodeURIComponent(query)}%22%7D%7D%7D`,
       scieloChile: `https://www.scielo.cl/scielo.php?script=sci_search&query=${encodeURIComponent(query)}`,
       articleMeta: `https://articlemeta.scielo.org/api/v1/article/identifiers/?collection=chl`,
       openAlex: `https://openalex.org/works?q=${encodeURIComponent(query)}`,
@@ -330,7 +480,7 @@ const SCielo_SEARCH: Partial<Record<LatamCountry, string>> = {
   CO: "https://www.scielo.org.co/scielo.php?script=sci_search",
 };
 
-/** Doctrina en revistas jurídicas de un país LATAM (catálogo de referencia). */
+/** Doctrina en revistas jurídicas de un país LATAM (catálogo + DOAJ). */
 export async function searchDoctrinaLatam(
   query: string,
   limit = 8,
@@ -341,30 +491,44 @@ export async function searchDoctrinaLatam(
     `Doctrina ${label} = fuente no vinculante. Contrastar con norma chilena aplicable.`,
   ];
   const issns = issnsForCountry(pais);
-  if (issns.length === 0) {
-    return {
-      query,
-      source: "doctrina",
-      results: [],
-      warnings: [...warnings, `Sin catálogo ISSN para país ${pais}.`],
-    };
+  const records: DoctrineRecord[] = [];
+
+  if (issns.length) {
+    try {
+      records.push(
+        ...(await searchDoctrineJournals(query, limit, issns, pais)),
+      );
+    } catch (error) {
+      warnings.push(
+        `OpenAlex (${label}): ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  } else {
+    warnings.push(`Sin catálogo ISSN denso para país ${pais}; se usa DOAJ.`);
   }
 
-  let records: DoctrineRecord[] = [];
   try {
-    records = await searchDoctrineJournals(query, limit, issns, pais);
+    records.push(
+      ...(await searchDoajDoctrine(query, Math.max(4, limit - records.length), {
+        countryHint: pais,
+      })),
+    );
   } catch (error) {
     warnings.push(
-      `OpenAlex (${label}): ${error instanceof Error ? error.message : String(error)}`,
+      `DOAJ (${label}): ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 
-  const results = uniqueByUrl(
-    dedupeDoctrineRecords(records).map(toCitationResult),
-  ).slice(0, limit);
+  const ranked = rankDoctrineRecords(
+    dedupeDoctrineRecords(records),
+    query,
+    catalogJournalNames(pais),
+  );
+  const results = uniqueByUrl(ranked.map(toCitationResult)).slice(0, limit);
 
   const scieloBase = SCielo_SEARCH[pais];
   const searchUrls: Record<string, string> = {
+    doaj: `https://doaj.org/search/articles?source=%7B%22query%22%3A%7B%22query_string%22%3A%7B%22query%22%3A%22${encodeURIComponent(query)}%22%7D%7D%7D`,
     openAlex: `https://openalex.org/works?q=${encodeURIComponent(query)}`,
     crossref: `https://search.crossref.org/?q=${encodeURIComponent(query)}`,
   };
@@ -383,7 +547,7 @@ export async function searchDoctrinaLatam(
       results.length === 0
         ? [
             ...warnings,
-            `No se encontró doctrina en el catálogo de referencia de ${label}.`,
+            `No se encontró doctrina en el catálogo / DOAJ de ${label}.`,
           ]
         : warnings,
   };
@@ -393,17 +557,36 @@ export function formatDoctrineSearchMarkdown(
   data: SearchResponse,
   heading: string,
 ): string {
+  const sealed = sealSearchResponse(data);
   const lines: string[] = [
     `## ${heading}`,
     "",
-    "_Fuente no vinculante. Contrastar con texto oficial de LeyChile._",
+    "| | |",
+    "|---|---|",
+    `| **Consulta** | ${sealed.query} |`,
+    `| **Hallazgos** | ${sealed.results.length} |`,
+    `| **Naturaleza** | Doctrina académica (no vinculante) |`,
+    "",
+    "_Contrastar siempre con el texto oficial de LeyChile. No presentar como norma o jurisprudencia._",
     "",
   ];
-  for (const [i, r] of data.results.entries()) {
-    lines.push(`### ${i + 1}. ${r.title}`);
-    lines.push(`- **Cita (Chile):** ${r.citation}`);
+  if (!sealed.results.length) {
+    lines.push(
+      "No se encontraron artículos doctrinales verificables.",
+      "",
+      "No inventes DOIs, revistas ni autores.",
+      "",
+    );
+  }
+  for (const [i, r] of sealed.results.entries()) {
+    lines.push(`### ${i + 1}. ${r.title}`, "");
+    lines.push(citationReadyBlock(r.citation), "");
     if (r.metadata?.citationApa) {
-      lines.push(`- **Cita (APA):** ${String(r.metadata.citationApa)}`);
+      lines.push(`**APA:** ${String(r.metadata.citationApa)}`, "");
+    }
+    lines.push(`- **Integridad:** \`candidate\` — ${integrityLabel(integrityOf(r))}`);
+    if (r.metadata?.authors) {
+      lines.push(`- **Autores:** ${String(r.metadata.authors)}`);
     }
     if (r.date) lines.push(`- **Año:** ${r.date}`);
     if (r.publisher) lines.push(`- **Revista:** ${r.publisher}`);
@@ -414,24 +597,36 @@ export function formatDoctrineSearchMarkdown(
     if (r.metadata?.scieloPid) {
       lines.push(`- **SciELO PID:** ${String(r.metadata.scieloPid)}`);
     }
-    if (r.metadata?.scieloCollection) {
-      lines.push(
-        `- **Colección SciELO:** ${String(r.metadata.scieloCollection)}`,
-      );
-    }
     if (r.metadata?.provider) {
-      lines.push(`- **Fuente:** ${String(r.metadata.provider)}`);
+      lines.push(`- **Fuente de metadatos:** ${String(r.metadata.provider)}`);
     }
     lines.push(`- **URL:** ${r.url}`);
     if (r.secondaryUrl) lines.push(`- **PDF:** ${r.secondaryUrl}`);
     lines.push("");
     if (r.summary) {
-      lines.push("**Extracto:**", "", `> ${r.summary}`, "");
+      lines.push("**Abstract (no vinculante):**", "", toBlockquote(r.summary, 6), "");
     }
   }
-  if (data.warnings?.length) {
-    lines.push("### Advertencias", ...data.warnings.map((w) => `- ${w}`));
+
+  const next = nextStepsForSearch({
+    source: "doctrina",
+    realCount: sealed.results.length,
+    stubCount: 0,
+    empty: sealed.results.length === 0,
+  });
+  if (next.length) {
+    lines.push("### Qué puedes hacer ahora");
+    for (const step of next) lines.push(`- ${step}`);
+    lines.push("");
   }
+
+  const bodyWarnings = (sealed.warnings ?? []).filter(
+    (w) => !/^Integridad:/i.test(w),
+  );
+  if (bodyWarnings.length) {
+    lines.push("### Advertencias", ...bodyWarnings.map((w) => `- ${w}`), "");
+  }
+  lines.push(assistantIntegrityBlock(), "");
   return lines.join("\n");
 }
 
@@ -460,17 +655,27 @@ export async function obtenerDoctrina(opts: {
       }
     }
     const work = await fetchJson<OpenAlexWork>(
-      `https://api.openalex.org/works/https://doi.org/${encodeURIComponent(doi)}?select=id,title,display_name,doi,publication_year,type,abstract_inverted_index,biblio,primary_location,authorships`,
+      politeUrl(
+        `https://api.openalex.org/works/https://doi.org/${encodeURIComponent(doi)}?select=id,title,display_name,doi,publication_year,type,abstract_inverted_index,biblio,primary_location,authorships`,
+      ),
     );
     const parsed = fromOpenAlex(work);
-    if (parsed) return parsed;
+    if (parsed) {
+      if (!parsed.abstract) {
+        const abs = await fetchCrossrefAbstract(doi);
+        if (abs) return { ...parsed, abstract: abs };
+      }
+      return parsed;
+    }
   }
   if (opts.openAlexId) {
     const id = opts.openAlexId.startsWith("http")
       ? opts.openAlexId
       : `https://openalex.org/${opts.openAlexId}`;
     const work = await fetchJson<OpenAlexWork>(
-      `https://api.openalex.org/works/${encodeURIComponent(id)}?select=id,title,display_name,doi,publication_year,type,abstract_inverted_index,biblio,primary_location,authorships`,
+      politeUrl(
+        `https://api.openalex.org/works/${encodeURIComponent(id)}?select=id,title,display_name,doi,publication_year,type,abstract_inverted_index,biblio,primary_location,authorships`,
+      ),
     );
     const parsed = fromOpenAlex(work);
     if (parsed) return parsed;
@@ -481,25 +686,41 @@ export async function obtenerDoctrina(opts: {
 export function doctrineToMarkdown(d: DoctrineRecord): string {
   return [
     `### ${d.title}`,
-    `- **Cita (Chile):** ${d.citationChile}`,
-    `- **Cita (APA):** ${d.citationApa}`,
+    "",
+    "**Cita lista para pegar (Chile):**",
+    "",
+    `> ${d.citationChile}`,
+    "",
+    `**APA:** ${d.citationApa}`,
+    "",
+    `- **Integridad:** \`candidate\` — metadata académica (no vinculante)`,
+    d.authors.length ? `- **Autores:** ${d.authors.join("; ")}` : undefined,
     d.year ? `- **Año:** ${d.year}` : undefined,
     d.journal ? `- **Revista:** ${d.journal}` : undefined,
+    d.volume || d.issue || d.pages
+      ? `- **Ref.:** ${[d.volume && `vol. ${d.volume}`, d.issue && `núm. ${d.issue}`, d.pages && `pp. ${d.pages}`].filter(Boolean).join(", ")}`
+      : undefined,
     d.scieloPid ? `- **SciELO PID:** ${d.scieloPid}` : undefined,
     d.scieloCollection
       ? `- **Colección SciELO:** ${d.scieloCollection}`
       : undefined,
     d.country ? `- **País:** ${d.country}` : undefined,
-    d.provider ? `- **Fuente:** ${d.provider}` : undefined,
-    d.doi ? `- **DOI:** https://doi.org/${d.doi.replace(/^https?:\/\/doi\.org\//i, "")}` : undefined,
+    d.provider ? `- **Fuente de metadatos:** ${d.provider}` : undefined,
+    d.doi
+      ? `- **DOI:** https://doi.org/${d.doi.replace(/^https?:\/\/doi\.org\//i, "")}`
+      : undefined,
     `- **URL:** ${d.url}`,
     d.pdfUrl ? `- **PDF:** ${d.pdfUrl}` : undefined,
     "",
     d.abstract
-      ? ["**Abstract / extracto:**", "", `> ${d.abstract}`, ""].join("\n")
+      ? ["**Abstract (no vinculante):**", "", toBlockquote(d.abstract, 8), ""].join(
+          "\n",
+        )
       : "_Sin abstract disponible en la fuente._",
     "",
     "_Doctrina no vinculante. Contrastar siempre con el texto oficial de LeyChile._",
+    "",
+    "→ Norma aplicable: `citar_texto_legal` / `obtener_articulo` en LeyChile.",
   ]
     .filter((x): x is string => Boolean(x))
     .join("\n");

@@ -159,16 +159,28 @@ export const TRIBUNAL_PORTALS: TribunalPortal[] = [
   },
 ];
 
+/** Lowercase + strip diacritics so "Apelaciones" / "apelación" match catalog aliases. */
+export function foldTribunalText(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .trim();
+}
+
 export function matchTribunalPortal(
   tribunal?: string,
 ): TribunalPortal | undefined {
   if (!tribunal) return undefined;
-  const t = tribunal.toLowerCase();
-  return TRIBUNAL_PORTALS.find(
-    (p) =>
-      p.name.toLowerCase() === t ||
-      p.aliases.some((a) => t.includes(a) || a.includes(t)),
-  );
+  const t = foldTribunalText(tribunal);
+  return TRIBUNAL_PORTALS.find((p) => {
+    const name = foldTribunalText(p.name);
+    if (name === t) return true;
+    return p.aliases.some((a) => {
+      const alias = foldTribunalText(a);
+      return Boolean(alias) && (t.includes(alias) || alias.includes(t));
+    });
+  });
 }
 
 export function tribunalSearchSites(tribunal?: string): string[] {

@@ -50,17 +50,34 @@ export async function citarTextoLegal(opts: {
     .map((line) => `> ${line}`)
     .join("\n");
 
+  const scope = [
+    opts.inciso ? `inciso ${opts.inciso}` : null,
+    opts.letra ? `literal ${opts.letra}` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
   const markdown = [
     `### Texto legal citado`,
-    `**${cited.citation}**`,
+    "",
+    "**Cita lista para pegar:**",
+    "",
+    `> ${cited.citation}`,
+    "",
     `*${norma.titulo}*`,
     "",
-    `- Fuente oficial: ${art.url}`,
-    `- Evidencia: texto íntegro LeyChile (idNorma ${norma.idNorma})`,
+    `- **Integridad:** \`verified\` — texto oficial LeyChile`,
+    `- **idNorma:** \`${norma.idNorma}\``,
+    `- **Artículo:** ${art.numero}${scope ? ` (${scope})` : ""}`,
+    `- **URL oficial:** ${art.url}`,
+    "",
+    "**Texto oficial:**",
     "",
     blockquote,
     "",
-    `_Para la pieza: «${cited.citation}»._`,
+    `_En el escrito puedes usar: «${cited.citation}»._`,
+    "",
+    "→ Para otro artículo de la misma norma: `obtener_texto_norma` modo `indice`, luego `citar_texto_legal`.",
   ].join("\n");
 
   return {
@@ -80,14 +97,21 @@ export async function citarTextoLegal(opts: {
 }
 
 export function normaIndiceMarkdown(norma: NormaTexto): string {
+  const sample = norma.articulos.slice(0, 3).map((a) => a.numero);
   return [
     `# ${norma.tipo ?? "Norma"} ${norma.numero ?? norma.idNorma} — ${norma.titulo}`,
-    `idNorma: ${norma.idNorma}`,
-    `URL: ${norma.url}`,
     "",
-    "## Índice de artículos (para citar con citar_texto_legal)",
+    `- **idNorma:** \`${norma.idNorma}\``,
+    `- **URL:** ${norma.url}`,
+    `- **Artículos detectados:** ${norma.articulos.length}`,
+    "",
+    "## Índice de artículos",
     ...norma.articulos.map(
-      (a) => `- art. ${a.numero} → idParte ${a.idParte ?? "n/d"} — ${a.url}`,
+      (a) => `- art. **${a.numero}** — ${a.url}`,
     ),
+    "",
+    sample.length
+      ? `→ Texto oficial: \`citar_texto_legal\` con id_norma \`${norma.idNorma}\` y articulo (ej. \`${sample[0]}\`).`
+      : "→ Sin artículos parseables; verifica en LeyChile.",
   ].join("\n");
 }

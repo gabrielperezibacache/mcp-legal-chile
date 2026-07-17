@@ -3,8 +3,10 @@ import { z } from "zod";
 import { formatChileanCitation } from "./citation.js";
 import { runWithDeadline } from "./deadline.js";
 import { formatSearchMarkdown } from "./format.js";
+import { ANTI_HALLUCINATION_RULES, sealSearchResponse } from "./integrity.js";
 import { metrics } from "./metrics.js";
 import {
+  citarJurisprudencia,
   citarTextoLegal,
   doctrineToMarkdown,
   formatDoctrineSearchMarkdown,
@@ -37,7 +39,7 @@ import {
 import type { SearchResponse } from "./types.js";
 import { formatResultsJson } from "./util.js";
 
-const VERSION = "1.7.4";
+const VERSION = "1.11.0";
 /** Must exceed TC keyword latency (often 6–14s) without cascading into slow web scrape. */
 const SEARCH_TOOL_TIMEOUT_MS = Number(
   process.env.SEARCH_TOOL_TIMEOUT_MS ?? 22_000,
@@ -61,8 +63,11 @@ const formatoSchema = z
   .describe("Formato de salida: markdown (recomendado para citas) o json");
 
 function okSearch(data: SearchResponse, formato: "markdown" | "json") {
+  const sealed = sealSearchResponse(data);
   const text =
-    formato === "json" ? formatResultsJson(data) : formatSearchMarkdown(data);
+    formato === "json"
+      ? formatResultsJson(sealed)
+      : formatSearchMarkdown(sealed);
   return { content: [{ type: "text" as const, text }] };
 }
 
@@ -430,6 +435,10 @@ export function createServer(): McpServer {
         letra: z.string().optional(),
         rol: z.string().optional(),
         tribunal: z.string().optional(),
+        considerando: z
+          .string()
+          .optional()
+          .describe("Considerando: 15, 15º o décimo quinto"),
         dictamen: z.string().optional(),
         anio: z.string().optional(),
         titulo: z.string().optional(),
@@ -529,7 +538,7 @@ export function createServer(): McpServer {
     {
       title: "Buscar jurisprudencia chilena",
       description:
-        "Links a fallos PJUD/TC (evidencia link_only). Filtros opcionales anio/tribunal.",
+        "Jurisprudencia chilena (TC API + PJUD/web). Ranking por relevancia, filtros anio/tribunal; evidencia link_only salvo TC.",
       inputSchema: {
         consulta: z.string().min(2),
         limite: limitSchema,
@@ -576,14 +585,28 @@ export function createServer(): McpServer {
       inputSchema: {
         consulta: z.string().min(2),
         limite: limitSchema,
+        anio: z.string().optional().describe("Filtrar por año del fallo"),
+        competencia: z
+          .string()
+          .optional()
+          .describe("Ej. inaplicabilidad, inconstitucionalidad"),
+        tipo_resolucion: z
+          .string()
+          .optional()
+          .describe("Ej. Sentencia, Resolución"),
         formato: formatoSchema,
       },
     },
-    async ({ consulta, limite, formato }) => {
+    async ({ consulta, limite, anio, competencia, tipo_resolucion, formato }) => {
       try {
         return okSearch(
           await timedSearch("buscar_tc", (signal) =>
-            searchTribunalConstitucional(consulta, limite, { signal }),
+            searchTribunalConstitucional(consulta, limite, {
+              signal,
+              anio,
+              competencia,
+              tipoResolucion: tipo_resolucion,
+            }),
           ),
           formato,
         );
@@ -629,7 +652,7 @@ export function createServer(): McpServer {
     {
       title: "Obtener fallo del Tribunal Constitucional",
       description:
-        "Metadatos + extracto/doctrina + blockquote desde buscador oficial TC (PDF enlazado).",
+        "Metadatos + extracto/doctrina + índice de considerandos. Para citar un considerando exacto usa citar_jurisprudencia.",
       inputSchema: {
         rol: z.string().min(3).describe("ROL TC, ej. 9666-20 o 9666-2020"),
         formato: formatoSchema,
@@ -651,11 +674,90 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
+    "citar_jurisprudencia",
+    {
+      title: "Citar fragmento exacto de jurisprudencia",
+      description:
+        "Cita formal (tribunal, tipo, ROL, año, considerando) + blockquote. Sin texto: API gratuita TC. Con texto pegado: fallos PJUD u otros (sin APIs de pago).",
+      inputSchema: {
+        rol: z.string().min(3).describe("ROL, ej. 9666-2020 o 12345-2020"),
+        texto: z
+          .string()
+          .optional()
+          .describe(
+            "Texto íntegro o considerandos pegados del fallo (requerido para PJUD / no-TC)",
+          ),
+        tribunal: z
+          .string()
+          .optional()
+          .describe("Ej. Corte Suprema; default TC si no hay texto"),
+        tipo_resolucion: z
+          .string()
+          .optional()
+          .describe("Ej. Sentencia, Auto"),
+        anio: z.string().optional(),
+        url: z.string().optional().describe("URL oficial del fallo si la tienes"),
+        considerando: z
+          .string()
+          .optional()
+          .describe("Nº o rótulo: 15, 15º, décimo quinto"),
+        consulta: z
+          .string()
+          .optional()
+          .describe("Palabras clave para elegir el considerando más pertinente"),
+        max_chars: z
+          .number()
+          .int()
+          .min(200)
+          .max(8000)
+          .default(2500)
+          .describe("Largo máximo del fragmento"),
+        formato: formatoSchema,
+      },
+    },
+    async ({
+      rol,
+      texto,
+      tribunal,
+      tipo_resolucion,
+      anio,
+      url,
+      considerando,
+      consulta,
+      max_chars,
+      formato,
+    }) => {
+      try {
+        const quote = await timedSearch("citar_jurisprudencia", (signal) =>
+          citarJurisprudencia({
+            rol,
+            texto,
+            tribunal,
+            tipoResolucion: tipo_resolucion,
+            anio,
+            url,
+            considerando,
+            consulta,
+            maxChars: max_chars,
+            signal,
+          }),
+        );
+        if (formato === "json") return okText(formatResultsJson(quote));
+        return okText(quote.markdown);
+      } catch (error) {
+        return fail(
+          `Error citar_jurisprudencia: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
     "buscar_doctrina",
     {
       title: "Buscar doctrina jurídica chilena",
       description:
-        "SciELO Chile (revistas jurídicas) + OpenAlex + Crossref con citas Chile/APA, DOI, abstract y PDF.",
+        "Doctrina OA gratis: OpenAlex (catálogo revistas CL) + DOAJ + Crossref + enrich ArticleMeta SciELO. Citas Chile/APA.",
       inputSchema: {
         consulta: z.string().min(2),
         limite: limitSchema,
@@ -686,7 +788,7 @@ export function createServer(): McpServer {
     {
       title: "Buscar doctrina jurídica LATAM",
       description:
-        "Revistas de referencia por país (PE, BR, AR, MX, CO): catálogo ISSN + OpenAlex + enlaces SciELO/OJS.",
+        "Doctrina LATAM OA: catálogo ISSN + OpenAlex + DOAJ por país (PE/BR/AR/MX/CO).",
       inputSchema: {
         consulta: z.string().min(2),
         pais: latamPaisSchema,
@@ -833,26 +935,30 @@ export function createServer(): McpServer {
           name: "MCP Legal Chile",
           version: VERSION,
           honestyMatrix: {
-            obtener_articulo: "full_text (LeyChile XML)",
-            obtener_texto_norma: "full_text (LeyChile XML)",
-            obtener_inciso: "full_text heurístico",
-            citar_texto_legal: "full_text + cita formal + blockquote",
-            buscar_legislacion: "metadata BCN",
-            buscar_jurisprudencia: "PJUD link_only",
-            buscar_tc: "TC API metadata + PDF",
-            resolver_rol: "portales + TC API / PJUD search",
-            obtener_fallo_tc: "TC extracto + blockquote oficial",
-            buscar_dictamenes: "link_only",
-            buscar_doctrina: "SciELO Chile (22 rev.) + OpenAlex + Crossref",
-            buscar_doctrina_latam: "Catálogo ISSN PE/BR/AR/MX/CO + OpenAlex",
-            obtener_doctrina: "ArticleMeta SciELO multi-país / DOI / OpenAlex",
+            obtener_articulo: "verified / full_text (LeyChile XML)",
+            obtener_texto_norma: "verified / full_text (LeyChile XML)",
+            obtener_inciso: "verified / full_text heurístico",
+            citar_texto_legal: "verified / full_text + cita formal",
+            citar_jurisprudencia:
+              "verified solo si TC API o texto pegado; rechaza considerando inexistente",
+            buscar_legislacion: "candidate / metadata BCN",
+            buscar_jurisprudencia:
+              "candidate o portal_stub (nunca afirmar ratio desde links)",
+            buscar_tc: "candidate / TC API metadata + PDF",
+            resolver_rol: "candidate / portales + TC",
+            obtener_fallo_tc: "verified extracto + índice considerandos",
+            buscar_dictamenes: "candidate / link_only (verificar CGR)",
+            buscar_doctrina: "candidate / metadata OA (no vinculante)",
+            buscar_doctrina_latam: "candidate / metadata OA LATAM",
+            obtener_doctrina: "candidate / ArticleMeta SciELO-DOI-OpenAlex",
+          },
+          integrityLevels: {
+            verified: "texto/fuente oficial recuperada por el MCP",
+            candidate: "metadato o enlace a verificar; no afirmar contenido",
+            portal_stub: "solo portal de búsqueda; NO es un documento encontrado",
           },
           slo: metrics.snapshot().slo,
-          guidance: [
-            "No inventes fallos, dictámenes ni artículos.",
-            "Si evidence=link_only, no afirmes el contenido del documento.",
-            "No sustituye asesoría jurídica profesional.",
-          ],
+          guidance: [...ANTI_HALLUCINATION_RULES],
         }),
       ),
   );
@@ -873,7 +979,8 @@ export function createServer(): McpServer {
             text: [
               "Usa preferentemente investigar_tema, luego obtener_articulo/obtener_inciso según haga falta.",
               `Pregunta: ${pregunta}`,
-              "Cita URL siempre. Si evidence=link_only, dilo. No inventes fuentes.",
+              "Cita URL siempre. Indica integrity/evidencia. Si link_only o portal_stub, no afirmes contenido.",
+              "Prohibido inventar ROL, dictámenes, artículos o considerandos no devueltos por las tools.",
             ].join("\n"),
           },
         },
@@ -948,7 +1055,7 @@ export function createServer(): McpServer {
               `Hechos preliminares: ${hechos}`,
               "Checklist: (1) art. 20 CPR vía obtener_articulo idNorma 242302",
               "(2) garantías involucradas art. 19",
-              "(3) buscar_jurisprudencia (PJUD link_only) o buscar_tc; si hay ROL TC usar obtener_fallo_tc",
+              "(3) buscar_jurisprudencia / buscar_tc; ROL TC → obtener_fallo_tc / citar_jurisprudencia; PJUD → pegar texto en citar_jurisprudencia",
               "(4) lista de pruebas y plazos — sin inventar jurisprudencia",
             ].join("\n"),
           },

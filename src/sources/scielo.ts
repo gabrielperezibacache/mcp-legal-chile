@@ -1,5 +1,6 @@
 import {
   buildDoctrineRecord,
+  formatAuthorFromParts,
   type DoctrineRecord,
 } from "./doctrineShared.js";
 import {
@@ -8,7 +9,8 @@ import {
   journalByIssn,
   type LatamCountry,
 } from "./journalCatalog.js";
-import { fetchJson } from "../util.js";
+import { fetchJson, politeUrl } from "../util.js";
+import { enrichDoctrineQuery } from "./doctrineShared.js";
 
 const ARTICLEMETA_BASE = "https://articlemeta.scielo.org/api/v1/article/";
 
@@ -85,9 +87,21 @@ function pickLang(tags: SciELOTag[] | undefined, lang = "es"): string | undefine
 function parseAuthors(tags: SciELOTag[] | undefined): string[] {
   if (!tags?.length) return [];
   return tags
-    .map((t) => [t.n, t.s].filter(Boolean).join(" ").trim())
+    .map((t) => formatAuthorFromParts(t.n, t.s) || [t.n, t.s].filter(Boolean).join(" ").trim())
     .filter(Boolean)
     .slice(0, 6);
+}
+
+function parseAbstract(article: Record<string, SciELOTag[]> | undefined): string | undefined {
+  if (!article) return undefined;
+  // SciELO ISIS tags commonly used for abstracts.
+  for (const key of ["v83", "v85", "v72", "v83a"]) {
+    const text = pickLang(article[key]);
+    if (text && text.length > 40) {
+      return text.replace(/\s+/g, " ").trim().slice(0, 900);
+    }
+  }
+  return undefined;
 }
 
 function parsePages(tags: SciELOTag[] | undefined): string | undefined {
@@ -188,6 +202,7 @@ function fromArticleMeta(data: ArticleMetaResponse): DoctrineRecord {
     doi,
     url,
     pdfUrl,
+    abstract: parseAbstract(article),
     scieloPid: pid,
     scieloCollection: collection,
     country: journalMeta?.country,
@@ -237,22 +252,14 @@ function fromOpenAlexJournal(work: OpenAlexWork): DoctrineRecord | null {
     abstract: reconstructAbstract(work.abstract_inverted_index),
     scieloPid,
     scieloCollection: collection,
-    country: journalMeta?.country,
+    country: journalMeta?.country ?? (collection ? "CL" : undefined),
     openAlexId: work.id,
-    provider: collection ? "scielo" : "openalex",
+    // OpenAlex ISSN hit — only ArticleMeta lookups use provider "scielo".
+    provider: "openalex",
   });
 }
 
-function enrichQuery(query: string, country?: LatamCountry): string {
-  if (country === "BR") {
-    return /\bdireito\b|\bjurid/i.test(query) ? query : `${query} direito`;
-  }
-  return /\bderecho\b|\bjurispruden/i.test(query)
-    ? query
-    : `${query} derecho`;
-}
-
-/** Búsqueda en catálogo ISSN vía OpenAlex. */
+/** Búsqueda en catálogo ISSN vía OpenAlex (polite pool). */
 export async function searchDoctrineJournals(
   query: string,
   limit: number,
@@ -262,7 +269,7 @@ export async function searchDoctrineJournals(
 ): Promise<DoctrineRecord[]> {
   if (issns.length === 0) return [];
   const params = new URLSearchParams({
-    search: enrichQuery(query, country),
+    search: enrichDoctrineQuery(query, country),
     filter: `primary_location.source.issn:${issns.join("|")}`,
     "per-page": String(Math.min(Math.max(limit, 1), 25)),
     sort: "relevance_score:desc",
@@ -270,7 +277,7 @@ export async function searchDoctrineJournals(
       "id,title,display_name,doi,publication_year,abstract_inverted_index,biblio,primary_location,authorships",
   });
   const data = await fetchJson<OpenAlexResponse>(
-    `https://api.openalex.org/works?${params}`,
+    politeUrl(`https://api.openalex.org/works?${params}`),
     {},
     undefined,
     signal,

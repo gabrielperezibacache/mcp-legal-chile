@@ -4,7 +4,28 @@ import { upstreamHostKey, withUpstreamLimit } from "./upstream.js";
 
 export const USER_AGENT =
   process.env.USER_AGENT ??
-  "MCP-Legal-Chile/1.2 (conector MCP; https://mcp-legal-chile.onrender.com)";
+  "MCP-Legal-Chile/1.9 (conector MCP libre; https://mcp-legal-chile.onrender.com)";
+
+/** Contact for OpenAlex/Crossref polite pools (higher rate limits). */
+export function contactEmail(): string {
+  return (
+    process.env.CONTACT_EMAIL?.trim() ||
+    "mcp-legal-chile@users.noreply.github.com"
+  );
+}
+
+/** Append mailto= for OpenAlex / Crossref polite pool. */
+export function politeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    if (!u.searchParams.has("mailto")) {
+      u.searchParams.set("mailto", contactEmail());
+    }
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
 
 // Search/metadata calls must finish well before common MCP client limits (~60s).
 // Long-running XML extraction passes an explicit timeout instead.

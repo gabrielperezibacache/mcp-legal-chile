@@ -1,3 +1,4 @@
+import { formatChileanCitation } from "../citation.js";
 import { throwIfAborted } from "../deadline.js";
 import { webCache } from "../cache.js";
 import { fetchJson } from "../util.js";
@@ -19,6 +20,7 @@ const TC_STOPWORDS = new Set([
   "de",
   "del",
   "desde",
+  "durante",
   "el",
   "en",
   "entre",
@@ -30,6 +32,7 @@ const TC_STOPWORDS = new Set([
   "los",
   "mas",
   "más",
+  "mediante",
   "ni",
   "no",
   "o",
@@ -37,10 +40,14 @@ const TC_STOPWORDS = new Set([
   "por",
   "que",
   "se",
+  "segun",
+  "según",
   "sin",
+  "so",
   "sobre",
   "su",
   "sus",
+  "tras",
   "un",
   "una",
   "unos",
@@ -107,22 +114,33 @@ export function normalizeTcSearchQuery(query: string): string {
     .split(/\s+/)
     .filter(Boolean);
   const kept = tokens.filter((t) => {
-    const lower = t.toLowerCase();
-    return lower.length > 1 && !TC_STOPWORDS.has(lower);
+    const lower = t
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "");
+    const foldedStop = TC_STOPWORDS.has(lower) || TC_STOPWORDS.has(t.toLowerCase());
+    return lower.length > 1 && !foldedStop;
   });
   if (kept.length > 0) return kept.join(" ");
   return tokens.join(" ") || raw;
 }
 
-function buildTcSearchFilter(search: string): Record<string, unknown> {
+function buildTcSearchFilter(
+  search: string,
+  opts: {
+    competencia?: string;
+    tipoResolucion?: string;
+    articuloConstitucion?: string;
+  } = {},
+): Record<string, unknown> {
   return {
     folio: "",
     fecha_sentencia: null,
     search,
-    tipo_resolucion: null,
+    tipo_resolucion: opts.tipoResolucion?.trim() || null,
     resultado: null,
-    competencia: null,
-    articulo_constitucion: null,
+    competencia: opts.competencia?.trim() || null,
+    articulo_constitucion: opts.articuloConstitucion?.trim() || null,
     ministro: null,
     cuerpo_legal: null,
     palabra_clave: null,
@@ -144,25 +162,60 @@ function filterParam(
     .join("; ");
 }
 
+function hitMatchesYear(hit: { rol: string; content?: string }, anio: string): boolean {
+  const y = anio.trim();
+  if (!/^(19|20)\d{2}$/.test(y)) return true;
+  const short = y.slice(-2);
+  const hay = `${hit.rol} ${hit.content ?? ""}`;
+  return (
+    hay.includes(y) ||
+    hit.rol.includes(`-${short}`) ||
+    hit.rol.endsWith(`-${short}`) ||
+    new RegExp(`-${short}(?:-|$)`).test(hit.rol)
+  );
+}
+
 export async function searchTcSentencias(
   query: string,
   limit = 5,
   signal?: AbortSignal,
+  opts: {
+    anio?: string;
+    competencia?: string;
+    tipoResolucion?: string;
+    articuloConstitucion?: string;
+  } = {},
 ): Promise<TcSearchHit[]> {
   throwIfAborted(signal);
   const search = normalizeTcSearchQuery(query);
   if (!search) return [];
-  const key = `tc:search:v2:${search}:${limit}`;
+  const anio = opts.anio?.trim();
+  const key = `tc:search:v4:${search}:${limit}:${anio ?? ""}:${opts.competencia ?? ""}:${opts.tipoResolucion ?? ""}:${opts.articuloConstitucion ?? ""}`;
   return webCache.getOrSet(key, async () => {
     throwIfAborted(signal);
-    const filter = encodeURIComponent(JSON.stringify(buildTcSearchFilter(search)));
+    const filter = encodeURIComponent(
+      JSON.stringify(
+        buildTcSearchFilter(search, {
+          competencia: opts.competencia,
+          tipoResolucion: opts.tipoResolucion,
+          articuloConstitucion: opts.articuloConstitucion,
+        }),
+      ),
+    );
     const data = await fetchJson<TcSearchResponse>(
       `${TC_API}/sentencias?filter=${filter}`,
       {},
       TC_TIMEOUT_MS,
       signal,
     );
-    const rows = data.data?.results ?? [];
+    let rows = data.data?.results ?? [];
+    if (anio) {
+      const filtered = rows.filter((r) =>
+        hitMatchesYear({ rol: String(r.rol), content: r.content }, anio),
+      );
+      // Keep unfiltered only if year wiped everything (API may omit year in ROL).
+      if (filtered.length) rows = filtered;
+    }
     return rows.slice(0, limit).map((r) => {
       const highlights =
         r.highlightParagraphs
@@ -170,7 +223,7 @@ export async function searchTcSentencias(
           .filter((x): x is string => Boolean(x)) ?? [];
       const excerpt =
         highlights.join(" ") ||
-        r.content?.replace(/\s+/g, " ").trim().slice(0, 1200);
+        r.content?.replace(/\s+/g, " ").trim().slice(0, 3_000);
       return {
         id: String(r.id),
         rol: String(r.rol),
@@ -197,12 +250,13 @@ export async function getTcFicha(
   gestion?: string;
   resultado?: string;
   doctrina?: string;
+  tipoResolucion?: string;
   votosMayoria?: string;
   articulosCpr?: string;
   fichaUrl: string;
   pdfUrl?: string;
 }> {
-  const key = `tc:ficha:${folioOrId}`;
+  const key = `tc:ficha:v2:${folioOrId}`;
   return webCache.getOrSet(key, async () => {
     throwIfAborted(signal);
     const data = await fetchJson<TcFichaResponse>(
@@ -223,6 +277,7 @@ export async function getTcFicha(
       gestion: filterParam(f.detalle, ["gestión", "gestion"]),
       resultado: filterParam(f.detalle, ["resultado"]),
       doctrina: filterParam(f.detalle, ["doctrina"]),
+      tipoResolucion: filterParam(f.detalle, ["tipo de resolución", "tipo de resolucion"]),
       votosMayoria: filterParam(f.detalle, ["voto mayoría", "voto mayoria"]),
       articulosCpr: filterParam(f.detalle, ["artículo de la constitución", "articulo de la constitucion"]),
       fichaUrl: `${TC_Buscador_UI}/#/ficha/${folio}`,
@@ -231,9 +286,31 @@ export async function getTcFicha(
   });
 }
 
-export function tcCitation(rol: string, competencia?: string): string {
-  const comp = competencia ? ` (${competencia})` : "";
-  return `Tribunal Constitucional, rol ${rol}${comp}`;
+export function tcCitation(
+  rol: string,
+  competenciaOrOpts?:
+    | string
+    | {
+        competencia?: string;
+        tipoResolucion?: string;
+        anio?: string;
+        considerando?: string;
+      },
+): string {
+  if (typeof competenciaOrOpts === "string" || competenciaOrOpts == null) {
+    return formatChileanCitation({
+      tribunal: "Tribunal Constitucional",
+      tipo: "Sentencia",
+      rol,
+    }).citation + (competenciaOrOpts ? ` (${competenciaOrOpts})` : "");
+  }
+  return formatChileanCitation({
+    tribunal: "Tribunal Constitucional",
+    tipo: competenciaOrOpts.tipoResolucion ?? "Sentencia",
+    rol,
+    anio: competenciaOrOpts.anio,
+    considerando: competenciaOrOpts.considerando,
+  }).citation;
 }
 
 export function excerptForQuote(text: string, max = 3500): string {

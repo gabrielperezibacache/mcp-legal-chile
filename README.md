@@ -1,31 +1,62 @@
 # MCP Legal Chile
 
-Conector **MCP** de derecho chileno para Claude, Cursor y apps compatibles.
+Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps compatibles.
 
+**Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.7.4
+**Versión:** 1.11.0
+
+## Proyecto libre
+
+Este MCP usa **solo fuentes públicas sin costo de API**:
+
+| Fuente | Uso |
+|---|---|
+| LeyChile / BCN SPARQL | Texto y metadata de normas |
+| Tribunal Constitucional | Fallos TC con texto y considerandos |
+| OpenAlex + DOAJ + Crossref | Doctrina académica OA |
+| SciELO ArticleMeta | Enrich de artículos SciELO (PDF/HTML) por DOI/PID |
+| Portales oficiales (PJUD, CGR, etc.) | Deep links |
+| DuckDuckGo HTML/lite | Búsqueda web best-effort (sin claves) |
+
+**No** se usan APIs comerciales (Serper, Brave, vLex, etc.).  
+PJUD no publica API de texto: para citar Corte Suprema / Apelaciones, pega el fallo en `citar_jurisprudencia`.
+
+Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-host.  
+`CONTACT_EMAIL` activa el *polite pool* de OpenAlex/Crossref (`mailto=`).
 
 ## Matriz de honestidad (qué trae cada tool)
 
 | Tool | Evidencia | Fuente |
 |---|---|---|
 | `citar_texto_legal` | **Texto íntegro + cita** | XML LeyChile en blockquote |
-| `buscar_doctrina` / `obtener_doctrina` | Metadata + abstract + **citas Chile/APA** | **SciELO Chile** (22 revistas) + OpenAlex + Crossref |
-| `buscar_doctrina_latam` | Metadata + citas + enlaces por país | Catálogo PE / BR / AR / MX / CO (OpenAlex + SciELO/OJS) |
-| `buscar_jurisprudencia` | **Solo enlace** (PJUD) | Búsqueda web → pjud.cl |
-| `buscar_tc` | Metadata + PDF | API `buscador-backend.tcchile.cl` |
-| `resolver_rol` | Enlaces + candidatos | TC API + portales PJUD/TC/TDLC… |
-| `obtener_fallo_tc` | **Extracto + blockquote** | API oficial Tribunal Constitucional |
-| `buscar_dictamenes` / `resolver_dictamen` | **Solo enlace** | Contraloría |
-| `investigar_tema` | Pack mixto (parcial OK) | Orquesta lo anterior con tope global ~12s |
+| `citar_jurisprudencia` | **Texto + considerando** | API TC gratis, o **texto pegado** (PJUD) |
+| `buscar_doctrina` / `obtener_doctrina` | Metadata + abstract + citas | OpenAlex + **DOAJ** + Crossref + ArticleMeta |
+| `buscar_doctrina_latam` | Metadata + citas + enlaces | Catálogo ISSN + OpenAlex + DOAJ |
+| `buscar_jurisprudencia` | Enlace / candidatos | TC + DDG libre → portales PJUD |
+| `buscar_tc` | Metadata + PDF | API gratuita TC |
+| `resolver_rol` | Enlaces + candidatos | TC + portales |
+| `obtener_fallo_tc` | Extracto + índice de considerandos | API gratuita TC |
+| `buscar_dictamenes` / `resolver_dictamen` | Solo enlace | Contraloría (deep link por número) |
+| `investigar_tema` | Pack mixto (parcial OK) | Orquesta lo anterior (~12s) |
 
-**Regla:** si `evidence=link_only`, el asistente no debe afirmar el contenido del fallo/dictamen.
+**Integridad (anti-alucinación):** cada resultado lleva `integrity`:
+
+| Nivel | Significado |
+|---|---|
+| `verified` | Texto/fuente oficial recuperada por el MCP |
+| `candidate` | Metadato o enlace a verificar; no afirmar contenido |
+| `portal_stub` | Solo portal de búsqueda; **no** es un documento encontrado |
+
+**Calidad de citas (1.11):** jurisprudencia unifica el formato chileno (tribunal, tipo, ROL, año, considerando); la web ya no usa el título de página como cita. Doctrina normaliza autores (`Apellido, N.`), completa vol./páginas DOAJ y prioriza relevancia temática + catálogo Chile.
+
+**Reglas:** si `evidence=link_only` o `integrity` es `portal_stub`/`candidate`, no afirmes el contenido. `citar_jurisprudencia` **rechaza** un considerando que no exista en el texto (no sustituye por otro). Sin resultados → decirlo; no completar con memoria.
 
 ### Cómo usarlo sin quedarse corto
 
-1. Empieza con `investigar_tema` (mapa rápido, no texto íntegro de todo).
-2. Extrae texto solo con tools de extracción: `citar_texto_legal`, `obtener_articulo`, `obtener_fallo_tc`.
-3. No esperes contenido de PJUD/CGR vía `buscar_*` — solo enlaces oficiales a verificar.
+1. Empieza con `investigar_tema` (mapa rápido).
+2. Extrae texto con `citar_texto_legal`, `obtener_articulo`, `obtener_fallo_tc` o `citar_jurisprudencia`.
+3. Fallos PJUD: abre el [portal unificado](https://www.pjud.cl/portal-unificado-sentencias), copia el texto y pásalo a `citar_jurisprudencia` con `rol`, `tribunal` y `texto`.
 
 ## SLOs (objetivos P95)
 
@@ -35,26 +66,18 @@ Conector **MCP** de derecho chileno para Claude, Cursor y apps compatibles.
 | Artículo cold (sin 429) | &lt; 5 s | LeyChile puede rate-limitar |
 | `buscar_legislacion` | &lt; 4 s | SPARQL BCN |
 | `buscar_derecho_chileno` (parcial OK) | &lt; 8 s | |
-| `investigar_tema` (parcial OK) | &lt; **12 s** | Tope duro `PACK_TOTAL_MS`; no es 4–8s end-to-end |
+| `investigar_tema` (parcial OK) | &lt; **12 s** | Tope duro `PACK_TOTAL_MS` |
 | Éxito XML LeyChile (24h, con caché) | &gt; 95% | |
-
-**Latencia variable (0.2–8s):** típica en Render starter (arranque en frío / red). El keep-alive mitiga, no elimina.
 
 Métricas en vivo: `GET /metrics`
 
 ## Capacidades principales
 
 - Texto oficial LeyChile (artículos, índice/cuerpo, inciso/literal heurístico)
-- Errores tipados: artículo no encontrado, XML inválido y formato no soportado (sin respuestas vacías)
-- Catálogo de normas frecuentes (CPR, Códigos, 19.628, 19.496…)
-- `investigar_tema` — pack anti-alucinación con presupuesto global y salida acotada (~10k chars)
-- `formatear_cita` — citas chilenas solo con IDs ya obtenidos
-- Jurisprudencia/TC con parsers ROL/RIT + catálogo de 18 tribunales/portales
-- Caché durable (Redis si `REDIS_URL`) + singleflight + stale-if-error
-- Rate limit / circuit breaker por proveedor (LeyChile, TC, OpenAlex, Crossref, SciELO…)
-- Concurrencia acotada por proveedor, sin serializar toda la operación (evita cascadas)
-- Búsquedas standalone con deadline duro de 15s (antes podían esperar 45–90s)
-- API keys + cuotas diarias persistentes en Redis (`MCP_API_KEYS` + `REDIS_URL`)
+- Doctrina OA: ranking por relevancia, abstracts (backfill Crossref), enrich SciELO
+- `citar_jurisprudencia` con considerando (TC o texto pegado)
+- Caché en memoria (Redis opcional)
+- Rate limit / circuit breaker por proveedor
 - Warmup `/warmup` + cron keep-alive
 
 ## Inicio rápido
@@ -63,7 +86,6 @@ Métricas en vivo: `GET /metrics`
 npm install
 npm run dev
 npm test
-# smoke local (server corriendo):
 SMOKE_BASE=http://127.0.0.1:3000 npm run smoke
 ```
 
@@ -73,27 +95,19 @@ MCP: `http://localhost:3000/mcp`
 
 | Variable | Descripción |
 |---|---|
-| `REDIS_URL` | Redis/Key Value: caché + cuotas diarias (si falta, solo memoria) |
-| `MCP_API_KEYS` | `name:key:limit,...` — cuotas por key; persistentes con Redis |
-| `SEARCH_PROVIDER` | `auto` \| `serper` \| `brave` |
-| `SEARCH_API_KEY` / `SERPER_API_KEY` / `BRAVE_API_KEY` | Búsqueda web |
+| `CONTACT_EMAIL` | Polite pool OpenAlex/Crossref (`mailto=`) |
+| `REDIS_URL` | Opcional: Redis self-host |
+| `MCP_API_KEYS` | Opcional — si falta, acceso abierto |
 | `WARMUP_ON_BOOT` | `1` (default) / `0` |
-| `LEYCHILE_MIN_INTERVAL_MS` | Intervalo mínimo entre requests LeyChile |
-| `CIRCUIT_OPEN_MS` / `CIRCUIT_THRESHOLD` | Circuit breaker |
-| `SEARCH_TOOL_TIMEOUT_MS` | Tope total de búsquedas standalone (default 22s) |
-| `FETCH_TIMEOUT_MS` / `TC_TIMEOUT_MS` / `SPARQL_TIMEOUT_MS` | Topes upstream (12s / 18s / 10s) |
-| `JURIS_WEB_BUDGET_MS` / `WEB_SEARCH_TIMEOUT_MS` | Scrape web jurisprudencia (default 5s / 5s) |
-| `*_MAX_CONCURRENT` | Concurrencia por proveedor (web 3; TC/OpenAlex/etc. 2; LeyChile 1) |
-| `UNIFIED_BUDGET_MS` | Tope fan-out `buscar_derecho_chileno` (default 8s) |
-| `PACK_TOTAL_MS` | Tope global `investigar_tema` (default 12s) |
-| `PACK_TIMEOUT_MS` | Tope por fuente dentro del pack (default ~6s) |
-| `PACK_MAX_CHARS` | Cap de salida del pack (default 10_000) |
-| `PACK_ARTICLE_CHARS` | Cap de quote de artículo en pack (default 1_200) |
+| `SEARCH_TOOL_TIMEOUT_MS` | Tope búsquedas standalone (default 22s) |
+| `JURIS_WEB_BUDGET_MS` / `WEB_SEARCH_TIMEOUT_MS` | Búsqueda web libre (DDG) |
+| `WEB_FAIL_CACHE_MS` | Enfriamiento tras bloqueo DDG (default 180s) |
+| `PACK_TOTAL_MS` | Tope `investigar_tema` (default 12s) |
 
 ## Deploy
 
-Blueprint: [`render.yaml`](render.yaml) — plan **starter**, Key Value, cron keep-alive cada 10 min.
+Blueprint: [`render.yaml`](render.yaml) — plan **free**, sin Key Value de pago ni API keys comerciales.
 
 ## Aviso
 
-No sustituye asesoría jurídica. PJUD/CGR no ofrecen API abierta de texto completo. El MCP es un puente: si BCN/PJUD/TC fallan, las tools degradan a warning/link o timeout parcial. En LeyChile, un artículo inexistente o XML no parseable se reporta como error explícito con enlaces oficiales de verificación.
+No sustituye asesoría jurídica. PJUD/CGR no ofrecen API abierta de texto completo. El MCP es un puente gratuito a fuentes oficiales y OA.

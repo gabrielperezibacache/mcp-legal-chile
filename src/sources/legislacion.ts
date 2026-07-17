@@ -81,6 +81,7 @@ function toCitation(b: SparqlBinding): CitationResult | null {
     id: code,
     evidence: "metadata",
     metadata: {
+      integrity: "candidate",
       leychileCode: code,
       tipo,
       organismo,

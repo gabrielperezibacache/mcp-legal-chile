@@ -21,11 +21,13 @@ import {
   normasRelacionadas,
   searchLegislacion,
 } from "./legislacion.js";
+import { citarJurisprudencia } from "./jurisQuote.js";
 import { citarTextoLegal } from "./legalQuote.js";
 import { investigarTema } from "./research.js";
 import { remainingMs, runWithDeadline } from "../deadline.js";
 
 export {
+  citarJurisprudencia,
   citarTextoLegal,
   estadoNorma,
   getNorma,

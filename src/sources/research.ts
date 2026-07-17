@@ -3,8 +3,14 @@ import {
   remainingMs,
   runWithDeadline,
 } from "../deadline.js";
+import {
+  assistantIntegrityBlock,
+  integrityOf,
+  sealSearchResponse,
+} from "../integrity.js";
+import { nextStepFor, toBlockquote } from "../present.js";
 import type { SearchResponse } from "../types.js";
-import { normalizeRol } from "../parsers.js";
+import { extractRolMention, normalizeRol } from "../parsers.js";
 import { searchDictamenes } from "./dictamenes.js";
 import { searchDoctrina } from "./doctrina.js";
 import {
@@ -22,13 +28,6 @@ import {
 function extractArticuloMention(query: string): string | undefined {
   const m = query.match(/art[ií]culo\s*([0-9]+(?:\s*bis)?)/i);
   return m?.[1]?.replace(/\s+/g, " ");
-}
-
-function extractRolMention(query: string): string | undefined {
-  const m = query.match(
-    /\b(?:rol|rol\s*n[ºo°.]?)\s*[:.]?\s*([0-9]{1,6}\s*[-–.\/]\s*[0-9]{2,4}(?:\s*[-–]\s*[A-Z]{2,4})?)\b/i,
-  );
-  return m?.[1]?.replace(/\s+/g, "");
 }
 
 function isTcMention(query: string): boolean {
@@ -156,18 +155,26 @@ export async function investigarTema(
     }
 
     const sections: string[] = [
-      `# Pack de investigación — ${consulta}`,
+      `# Pack de investigación`,
       "",
-      `_Presupuesto ${totalMs}ms · parcial OK. Usa solo las fuentes listadas. No inventes fallos, dictámenes ni artículos._`,
+      `**Consulta:** ${consulta}`,
+      "",
+      `_Presupuesto ${totalMs}ms · resultados parciales OK. Usa solo lo listado. Prohibido inventar fallos, dictámenes, artículos o considerandos._`,
       "",
     ];
 
     sections.push("## 1. Marco normativo");
     if (leg.status === "fulfilled" && leg.value.results.length) {
       for (const r of leg.value.results) {
-        sections.push(
-          `- **${r.title}** — ${r.citation} — ${r.url}${r.id ? ` (idNorma ${r.id})` : ""}`,
-        );
+        sections.push(`- **${r.title}**`);
+        sections.push(`  - Cita: ${r.citation}`);
+        if (r.id) sections.push(`  - idNorma: \`${r.id}\``);
+        sections.push(`  - URL: ${r.url}`);
+        if (r.id) {
+          sections.push(
+            `  - → \`citar_texto_legal\` / \`obtener_articulo\` con idNorma \`${r.id}\``,
+          );
+        }
       }
     } else {
       pending.push("legislacion");
@@ -273,12 +280,16 @@ export async function investigarTema(
           sections.push(
             "",
             "### Extracto oficial TC",
-            `**${falloTc.citation}**`,
+            "",
+            "**Cita lista para pegar:**",
+            "",
+            `> ${falloTc.citation}`,
+            "",
             falloTc.url,
             "",
-            ...shortExcerpt.split(/(?<=\.)\s+/).slice(0, 6).map((l) => `> ${l}`),
+            toBlockquote(shortExcerpt, 6),
             "",
-            `_Extracto acotado. Usa obtener_fallo_tc para más detalle / PDF._`,
+            "→ Más detalle / PDF: `obtener_fallo_tc`. Cita por considerando: `citar_jurisprudencia`.",
           );
         }
         if (rolResolved.warnings.length) {
@@ -305,33 +316,39 @@ export async function investigarTema(
         sections.push(`- Fuente incompleta: ${String(result.reason)}`);
         return;
       }
-      if (!result.value.results.length) {
-        sections.push("- Sin hallazgos.");
+      const sealed = sealSearchResponse(result.value);
+      if (!sealed.results.length) {
+        sections.push(
+          "- Sin hallazgos verificables. No inventes fuentes para esta sección.",
+        );
         return;
       }
-      for (const r of result.value.results.slice(0, limitePorFuente)) {
-        if (label === "doctrina") {
-          sections.push(`- **${r.title}**`);
-          sections.push(`  - Cita: ${r.citation}`);
-          sections.push(`  - URL: ${r.url}`);
-          if (r.summary) {
-            sections.push(`  - Extracto: ${String(r.summary).slice(0, 180)}…`);
-          }
-        } else {
-          const ids = [
-            r.rol ? `ROL ${r.rol}` : null,
-            r.tribunal,
-            r.evidence ? `evidencia=${r.evidence}` : null,
-          ]
-            .filter(Boolean)
-            .join(" · ");
-          sections.push(`- **${r.title}**${ids ? ` (${ids})` : ""} — ${r.url}`);
+      for (const r of sealed.results.slice(0, limitePorFuente)) {
+        const integrity = integrityOf(r);
+        sections.push(`- **${r.title}**`);
+        sections.push(`  - Cita: ${r.citation}`);
+        const meta = [
+          r.rol ? `ROL \`${r.rol}\`` : null,
+          r.tribunal,
+          `integridad=\`${integrity}\``,
+          r.evidence ? `evidencia=${r.evidence}` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        if (meta) sections.push(`  - ${meta}`);
+        sections.push(`  - URL: ${r.url}`);
+        if (label === "doctrina" && r.summary) {
+          sections.push(
+            `  - Abstract: ${String(r.summary).replace(/\s+/g, " ").slice(0, 200)}…`,
+          );
         }
+        const next = nextStepFor(r);
+        if (next) sections.push(`  - → ${next.replace(/^Siguiente:\s*/i, "")}`);
       }
-      if (result.value.warnings?.length) {
+      if (sealed.warnings?.length) {
         sections.push(
-          ...result.value.warnings
-            .slice(0, 2)
+          ...sealed.warnings
+            .slice(0, 3)
             .map((w) => `  - _Advertencia:_ ${w}`),
         );
       }
@@ -355,8 +372,13 @@ export async function investigarTema(
     sections.push(
       `- Tiempo pack: ${elapsed}ms (tope ${totalMs}ms).`,
       "- Confirma vigencia en LeyChile antes de asesorar.",
-      "- No cites ratio decidendi desde títulos de links (evidence=link_only).",
+      "- No cites ratio decidendi desde títulos de links (evidence=link_only / portal_stub).",
+      "- Fallos PJUD: pega el texto en `citar_jurisprudencia` (sin API abierta del Poder Judicial).",
+      "- Doctrina: metadata OA (no vinculante); preferir LeyChile para normas.",
+      "- Si una sección dice «Sin hallazgos», no completes con memoria ni fuentes no listadas.",
       "- Este pack no constituye asesoría jurídica formal.",
+      "",
+      assistantIntegrityBlock(),
     );
 
     return capMarkdown(sections.join("\n"), maxChars);
