@@ -3,7 +3,12 @@ import { formatChileanCitation } from "../citation.js";
 import { webCache } from "../cache.js";
 import { throwIfAborted } from "../deadline.js";
 import { parseCaseIdentifiers } from "../parsers.js";
-import { fetchText, stripHtml, uniqueByUrl } from "../util.js";
+import {
+  fetchText,
+  isRetryableFetchError,
+  stripHtml,
+  uniqueByUrl,
+} from "../util.js";
 
 export interface WebHit {
   title: string;
@@ -65,6 +70,77 @@ function extractDuckDuckGoHits(html: string): WebHit[] {
   }
 
   return hits;
+}
+
+/** Yahoo wraps outbound links in r.search.yahoo.com redirects with the real
+ * target URL percent-encoded in the `RU=` path/query segment. */
+function decodeYahooRedirect(rawUrl: string): string {
+  const match =
+    /[?&]RU=([^&/]+)/.exec(rawUrl) ?? /\/RU=([^/]+)\/RK=/.exec(rawUrl);
+  if (!match) return rawUrl;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return rawUrl;
+  }
+}
+
+function extractYahooHits(html: string): WebHit[] {
+  const hits: WebHit[] = [];
+  const blockRe =
+    /<div class="compTitle[^"]*"[^>]*>[\s\S]*?<a[^>]*href="(https:\/\/r\.search\.yahoo\.com\/[^"]+)"[\s\S]*?<h3[^>]*>([\s\S]*?)<\/h3>[\s\S]*?<\/a>[\s\S]*?<div class="compText[^"]*">([\s\S]*?)<\/div>/g;
+  let match: RegExpExecArray | null;
+  while ((match = blockRe.exec(html)) !== null) {
+    const url = decodeYahooRedirect(match[1]);
+    const title = stripHtml(match[2] ?? "");
+    const snippet = stripHtml(match[3] ?? "");
+    if (!title || !url.startsWith("http")) continue;
+    // Skip Yahoo's own properties (mail/finance/shopping/news portals, etc.).
+    if (/(^|\.)yahoo\.com$/i.test(new URL(url).hostname)) continue;
+    hits.push({ title, url, snippet: snippet || undefined });
+  }
+  return hits;
+}
+
+async function fetchYahooHtml(
+  query: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const url = `https://search.yahoo.com/search?p=${encodeURIComponent(query)}`;
+  return fetchText(
+    url,
+    {
+      headers: {
+        Accept: "text/html,application/xhtml+xml",
+        "Accept-Language": "es-CL,es;q=0.9,en;q=0.8",
+        "User-Agent":
+          process.env.WEB_SEARCH_USER_AGENT ??
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      },
+    },
+    WEB_SEARCH_TIMEOUT_MS,
+    signal,
+  );
+}
+
+/** Yahoo occasionally 500s transiently (~1 in 5 requests); one quick retry
+ * clears most of these without eating the tight search budget. */
+async function searchYahoo(
+  query: string,
+  limit: number,
+  signal?: AbortSignal,
+): Promise<WebHit[]> {
+  try {
+    const html = await fetchYahooHtml(query, signal);
+    return uniqueByUrl(extractYahooHits(html)).slice(0, limit);
+  } catch (error) {
+    throwIfAborted(signal);
+    if (!isRetryableFetchError(error)) throw error;
+    await new Promise((r) => setTimeout(r, 250));
+    throwIfAborted(signal);
+    const html = await fetchYahooHtml(query, signal);
+    return uniqueByUrl(extractYahooHits(html)).slice(0, limit);
+  }
 }
 
 function extractLiteHits(html: string): WebHit[] {
@@ -157,27 +233,37 @@ export async function searchWeb(
     );
   }
 
-  const cacheKey = `web:v4:ddg:${q}:${limit}`;
+  const cacheKey = `web:v5:yahoo:${q}:${limit}`;
   return webCache.getOrSet(cacheKey, async () => {
     throwIfAborted(opts.signal);
+    // Yahoo HTML SERP is the primary free backend: as of 2026 DuckDuckGo's
+    // html/lite endpoints consistently return anti-bot CAPTCHA challenges
+    // (status 202 + anomaly-modal) instead of results.
     try {
-      const hits = await searchDuckDuckGoHtml(q, limit, opts.signal);
+      const hits = await searchYahoo(q, limit, opts.signal);
       if (hits.length) return hits;
-      throw new Error("DuckDuckGo HTML vacío");
-    } catch (htmlError) {
+      throw new Error("Yahoo Search vacío");
+    } catch (yahooError) {
       throwIfAborted(opts.signal);
       try {
-        const lite = await searchDuckDuckGoLite(q, limit, opts.signal);
-        if (lite.length) return lite;
-        markFail(failKey);
-        throw new Error(
-          `DuckDuckGo no devolvió resultados (posible bloqueo). ${htmlError instanceof Error ? htmlError.message : String(htmlError)}`,
-        );
-      } catch (liteError) {
-        markFail(failKey);
-        throw liteError instanceof Error
-          ? liteError
-          : new Error(String(liteError));
+        const html = await searchDuckDuckGoHtml(q, limit, opts.signal);
+        if (html.length) return html;
+        throw new Error("DuckDuckGo HTML vacío");
+      } catch {
+        throwIfAborted(opts.signal);
+        try {
+          const lite = await searchDuckDuckGoLite(q, limit, opts.signal);
+          if (lite.length) return lite;
+          markFail(failKey);
+          throw new Error(
+            `Búsqueda web libre sin resultados (posible bloqueo). ${yahooError instanceof Error ? yahooError.message : String(yahooError)}`,
+          );
+        } catch (liteError) {
+          markFail(failKey);
+          throw liteError instanceof Error
+            ? liteError
+            : new Error(String(liteError));
+        }
       }
     }
   });

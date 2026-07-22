@@ -445,7 +445,11 @@ function buildWebQuery(
   query: string,
   opts: { anio?: string; tribunal?: string },
 ): string {
-  const parts = [query, "(sentencia OR fallo OR causa OR jurisprudencia)"];
+  // NOTE: Yahoo's SERP parser is brittle with parenthesized OR-groups — it
+  // frequently (but not always) mis-parses `(a OR b)` and reports a false
+  // "no results" even when the same terms without parentheses return hits.
+  // Keep the OR clause flat (no parens) to avoid that failure mode.
+  const parts = [query, "sentencia OR fallo OR causa OR jurisprudencia"];
   if (opts.anio) parts.push(opts.anio);
   if (opts.tribunal) parts.push(`"${opts.tribunal}"`);
   return parts.join(" ");
@@ -497,7 +501,8 @@ export async function resolverRol(opts: {
     const sites =
       portal && portal.id !== "tc" ? portal.sites : ["pjud.cl"];
     try {
-      const q = `rol ${norm.display} ${tribunal ?? ""} (sentencia OR fallo)`.trim();
+      // See buildWebQuery: avoid parenthesized OR-groups, Yahoo mis-parses them.
+      const q = `rol ${norm.display} ${tribunal ?? ""} sentencia OR fallo OR causa OR jurisprudencia`.trim();
       for (const site of sites) {
         const hits = await searchWeb(q, {
           site,
@@ -770,13 +775,23 @@ export async function searchJurisprudencia(
 
   const portal = matchTribunalPortal(opts.tribunal ?? "");
   const skipTc = Boolean(opts.site) || (portal != null && portal.id !== "tc");
+  const wantWeb =
+    !portal || portal.id !== "tc" || Boolean(opts.site);
 
-  // 1) TC API first — real metadata, no web scrape.
+  // 1) TC API first — real metadata, no web scrape. When both TC and PJUD are
+  // in scope (generic query, no tribunal filter), cap how many TC hits we take
+  // so the ordinary-courts web search below always gets a chance to run —
+  // otherwise a topical query (e.g. "despido injustificado") would return only
+  // Tribunal Constitucional inaplicabilidad rulings and never Corte Suprema /
+  // Cortes de Apelaciones sentencias, which is what most jurisprudence
+  // searches actually want.
+  const tcLimit =
+    !skipTc && wantWeb ? Math.max(2, Math.ceil(limit / 2)) : limit;
   if (!skipTc) {
     try {
       const tcHits = await searchTcForQuery(
         query,
-        limit,
+        tcLimit,
         opts.signal,
         opts.anio,
       );
@@ -789,10 +804,10 @@ export async function searchJurisprudencia(
     }
   }
 
-  // 2) Free DuckDuckGo scrape for PJUD/portals — short budget; on failure → portals.
-  const wantWeb =
-    !portal || portal.id !== "tc" || Boolean(opts.site);
-  if (wantWeb && results.length < limit) {
+  // 2) Free web scrape for PJUD/portals — short budget; on failure → portals.
+  // Always attempt this when in scope, even if the (capped) TC results already
+  // reached `limit`, so ordinary-court case law isn't crowded out by TC hits.
+  if (wantWeb) {
     const q = buildWebQuery(query, {
       anio: opts.anio,
       tribunal: opts.tribunal,
