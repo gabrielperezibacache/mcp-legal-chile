@@ -10,6 +10,8 @@ import { metrics } from "./metrics.js";
 import { createServer, VERSION } from "./server.js";
 import { parseNormaTexto } from "./sources/normaTexto.js";
 import { upstreamStatus } from "./upstream.js";
+import rateLimit from "express-rate-limit";
+import cors from "cors";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 3000);
@@ -49,7 +51,46 @@ const app = createMcpExpressApp({
   allowedHosts: allowedHosts(),
 });
 
+// Render (and most PaaS) terminate TLS at a reverse proxy in front of the app;
+// trust its X-Forwarded-For so req.ip / rate limiting see the real client IP.
+app.set("trust proxy", 1);
+// Never leak stack traces / file paths in error responses, even if NODE_ENV
+// isn't explicitly set to "production" by the hosting platform.
+app.set("env", "production");
+// Don't advertise the framework/version to probing clients.
+app.disable("x-powered-by");
+
+// Open, keyless MCP endpoint by design (see auth.ts): browser-based MCP
+// clients need explicit CORS headers, not just same-origin fetches, or their
+// preflight OPTIONS requests fail before authorizeRequest ever runs.
+app.use(
+  cors({
+    origin: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Mcp-Session-Id"],
+    exposedHeaders: ["Mcp-Session-Id"],
+  }),
+);
+
 app.use(express.static(PUBLIC_DIR));
+
+/**
+ * Coarse IP-based abuse guard in front of /mcp, independent of the per-API-key
+ * daily quota in auth.ts (which only applies when MCP_API_KEYS is set). This
+ * protects the free, open-access default deployment from a single client
+ * hammering the process and starving other users / upstream circuits.
+ */
+const mcpRateLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 60),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    jsonrpc: "2.0",
+    error: { code: -32000, message: "Too many requests. Retry in ~1 minute." },
+    id: null,
+  },
+});
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, service: "mcp-legal-chile", version: VERSION });
@@ -150,7 +191,7 @@ async function handleMcp(
   }
 }
 
-app.post("/mcp", (req, res) => {
+app.post("/mcp", mcpRateLimiter, (req, res) => {
   void handleMcp(req, res);
 });
 
@@ -170,6 +211,40 @@ app.delete("/mcp", (_req, res) => {
   });
 });
 
+app.use((_req, res) => {
+  res.status(404).json({ ok: false, error: "Not found" });
+});
+
+// Final error handler: replaces Express's default HTML error page (which, in
+// dev-style environments, echoes the raw error message/stack) with a plain
+// JSON-RPC-shaped response that never leaks internals like file paths.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+app.use(
+  (
+    err: unknown,
+    req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    const status =
+      typeof (err as { status?: number; statusCode?: number })?.status ===
+      "number"
+        ? (err as { status: number }).status
+        : typeof (err as { statusCode?: number })?.statusCode === "number"
+          ? (err as { statusCode: number }).statusCode
+          : 400;
+    if (req.path === "/mcp") {
+      res.status(status).json({
+        jsonrpc: "2.0",
+        error: { code: -32600, message: "Invalid request body." },
+        id: null,
+      });
+      return;
+    }
+    res.status(status).json({ ok: false, error: "Invalid request." });
+  },
+);
+
 async function warmupHotNormas(): Promise<void> {
   if (process.env.WARMUP_ON_BOOT === "0") return;
   const ids = HOT_IDS_FOR_WARMUP.slice(0, 4);
@@ -187,7 +262,7 @@ async function warmupHotNormas(): Promise<void> {
   }
 }
 
-app.listen(PORT, HOST, (error?: Error) => {
+const httpServer = app.listen(PORT, HOST, (error?: Error) => {
   if (error) {
     console.error("No se pudo iniciar el servidor:", error);
     process.exit(1);
@@ -195,4 +270,46 @@ app.listen(PORT, HOST, (error?: Error) => {
   console.error(`MCP Legal Chile v${VERSION} en http://${HOST}:${PORT}`);
   console.error(`Endpoint MCP: http://${HOST}:${PORT}/mcp`);
   void warmupHotNormas();
+});
+
+// Guard against slow-client / slowloris-style connections holding sockets
+// open indefinitely. Node defaults (0 = unlimited) are unsafe for a public
+// endpoint; keep generous headroom above SEARCH_TOOL_TIMEOUT_MS/PACK_TOTAL_MS
+// so legitimate long tool calls still complete.
+httpServer.requestTimeout = Number(process.env.HTTP_REQUEST_TIMEOUT_MS ?? 60_000);
+httpServer.headersTimeout = Number(process.env.HTTP_HEADERS_TIMEOUT_MS ?? 65_000);
+httpServer.keepAliveTimeout = Number(process.env.HTTP_KEEPALIVE_TIMEOUT_MS ?? 61_000);
+
+/** Graceful shutdown: stop accepting new connections, let in-flight requests finish. */
+let shuttingDown = false;
+function shutdown(signal: string): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.error(`[shutdown] ${signal} recibido, cerrando servidor...`);
+  const forceExitTimer = setTimeout(() => {
+    console.error("[shutdown] timeout, forzando salida");
+    process.exit(1);
+  }, 10_000);
+  forceExitTimer.unref();
+  httpServer.close((err) => {
+    if (err) {
+      console.error("[shutdown] error al cerrar:", err);
+      process.exit(1);
+    }
+    console.error("[shutdown] servidor cerrado limpiamente");
+    process.exit(0);
+  });
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
+
+// Last-resort safety nets: log and keep the process alive rather than letting
+// one unexpected upstream/parsing error crash the whole server (Render would
+// then cycle restarts, dropping every in-flight request each time).
+process.on("uncaughtException", (error) => {
+  console.error("[fatal] uncaughtException:", error);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[fatal] unhandledRejection:", reason);
 });

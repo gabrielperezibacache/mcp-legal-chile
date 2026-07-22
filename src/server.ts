@@ -40,7 +40,7 @@ import {
 import type { SearchResponse } from "./types.js";
 import { formatResultsJson } from "./util.js";
 
-const VERSION = "1.11.2";
+const VERSION = "1.12.0";
 /** Must exceed TC keyword latency (often 6–14s) without cascading into slow web scrape. */
 const SEARCH_TOOL_TIMEOUT_MS = Number(
   process.env.SEARCH_TOOL_TIMEOUT_MS ?? 22_000,

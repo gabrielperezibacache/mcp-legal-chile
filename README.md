@@ -4,7 +4,7 @@ Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps 
 
 **Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.11.2
+**Versión:** 1.12.0
 
 ## Proyecto libre
 
@@ -79,6 +79,7 @@ Métricas en vivo: `GET /metrics`
 - Caché en memoria (Redis opcional)
 - Rate limit / circuit breaker **por proveedor** (LeyChile 429 no abre el circuito de doctrina/OpenAlex)
 - Warmup `/warmup` + cron keep-alive
+- Endurecimiento de producción (1.12): CORS explícito para clientes MCP en navegador, rate limit por IP en `/mcp` (60 req/min por defecto, independiente de las cuotas por API key), errores JSON-RPC limpios (sin stack traces ni rutas de archivo aunque `NODE_ENV` no esté seteado), apagado ordenado ante `SIGTERM`/`SIGINT`, timeouts de socket HTTP contra clientes lentos, y `uncaughtException`/`unhandledRejection` no derriban el proceso
 
 > **Nota clientes MCP (Hermes, etc.):** un mensaje global tipo «MCP unreachable» tras ~3 errores suele ser **protección del cliente**, no del servidor. En el servidor los circuitos son por host; ante 429 de LeyChile las tools de texto devuelven markdown útil (URL oficial + reintento) sin marcar `isError` cuando es posible.
 
@@ -106,6 +107,8 @@ MCP: `http://localhost:3000/mcp`
 | `WEB_FAIL_CACHE_MS` | Enfriamiento tras bloqueo DDG (default 180s) |
 | `PACK_TOTAL_MS` | Tope `investigar_tema` (default 18s) |
 | `PACK_TIMEOUT_MS` | Timeout por fuente en el pack (default ~11s) |
+| `RATE_LIMIT_PER_MINUTE` | Tope de requests/IP a `/mcp` (default 60) |
+| `HTTP_REQUEST_TIMEOUT_MS` / `HTTP_HEADERS_TIMEOUT_MS` / `HTTP_KEEPALIVE_TIMEOUT_MS` | Timeouts de socket HTTP (defaults 60s/65s/61s) |
 
 ## Deploy
 
