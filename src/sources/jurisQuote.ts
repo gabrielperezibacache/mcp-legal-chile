@@ -23,7 +23,7 @@ export interface JurisprudenciaQuote {
   blockquote: string;
   url: string;
   pdfUrl?: string;
-  evidence: "full_text";
+  evidence: "full_text" | "metadata";
   sourceMode: "tc_api" | "texto_pegado";
   warnings: string[];
   considerandosDisponibles?: Array<{ numero?: number; label: string }>;
@@ -57,6 +57,9 @@ async function loadTcSentence(
   fecha?: string;
   tipoResolucion: string;
   resultado?: string;
+  /** True when `content` is only the TC's official doctrina/holding summary
+   *  (ficha fallback), not the full sentence body from the search index. */
+  isDoctrinaSummary?: boolean;
 }> {
   const norm = normalizeRol(rol);
   let hit:
@@ -69,33 +72,60 @@ async function loadTcSentence(
       hits.find((h) => h.rol === norm.numero);
     if (hit?.content) break;
   }
-  if (!hit?.content) {
-    throw new Error(
-      `No hay texto íntegro TC para rol ${norm.display}. Para fallos PJUD u otros tribunales, pasa el parámetro texto (pega el fallo oficial).`,
-    );
-  }
 
-  let ficha: Awaited<ReturnType<typeof getTcFicha>> | undefined;
-  try {
-    ficha = await getTcFicha(hit.rol, signal);
-  } catch {
+  if (hit?.content) {
+    let ficha: Awaited<ReturnType<typeof getTcFicha>> | undefined;
     try {
-      ficha = await getTcFicha(hit.id, signal);
+      ficha = await getTcFicha(hit.rol, signal);
     } catch {
-      /* optional */
+      try {
+        ficha = await getTcFicha(hit.id, signal);
+      } catch {
+        /* optional */
+      }
     }
+
+    return {
+      rolDisplay: norm.display,
+      content: hit.content,
+      competencia: hit.competencia ?? ficha?.competencia,
+      fichaUrl: ficha?.fichaUrl ?? hit.fichaUrl,
+      pdfUrl: ficha?.pdfUrl ?? hit.pdfUrl,
+      fecha: ficha?.fecha,
+      tipoResolucion: ficha?.tipoResolucion ?? "Sentencia",
+      resultado: ficha?.resultado,
+    };
   }
 
-  return {
-    rolDisplay: norm.display,
-    content: hit.content,
-    competencia: hit.competencia ?? ficha?.competencia,
-    fichaUrl: ficha?.fichaUrl ?? hit.fichaUrl,
-    pdfUrl: ficha?.pdfUrl ?? hit.pdfUrl,
-    fecha: ficha?.fecha,
-    tipoResolucion: ficha?.tipoResolucion ?? "Sentencia",
-    resultado: ficha?.resultado,
-  };
+  // Fallback: the TC free-text search index does not cover every ROL (some
+  // older/less-queried sentences are absent from `/api/extended/sentencias`),
+  // but the metadata ficha endpoint (`/api/buscadorexterno/ficha/{folio}`) is
+  // keyed directly by folio/ROL number and often still has it, including the
+  // official "doctrina" (case-holding summary) written by the TC itself. Use
+  // that as quotable content instead of failing outright — it is still an
+  // official TC-authored text, just not full body text.
+  try {
+    const ficha = await getTcFicha(norm.numero, signal);
+    if (ficha.doctrina && ficha.doctrina.length >= 80) {
+      return {
+        rolDisplay: norm.display,
+        content: ficha.doctrina,
+        competencia: ficha.competencia,
+        fichaUrl: ficha.fichaUrl,
+        pdfUrl: ficha.pdfUrl,
+        fecha: ficha.fecha,
+        tipoResolucion: ficha.tipoResolucion ?? "Sentencia",
+        resultado: ficha.resultado,
+        isDoctrinaSummary: true,
+      };
+    }
+  } catch {
+    /* fall through to the error below */
+  }
+
+  throw new Error(
+    `No hay texto íntegro TC para rol ${norm.display}. Para fallos PJUD u otros tribunales, pasa el parámetro texto (pega el fallo oficial).`,
+  );
 }
 
 function pickFragment(
@@ -168,6 +198,7 @@ function buildQuoteMarkdown(opts: {
   competencia?: string;
   resultado?: string;
   evidenceLabel: string;
+  integrityLevel?: "verified" | "metadata";
   url?: string;
   pdfUrl?: string;
   blockquote: string;
@@ -195,7 +226,7 @@ function buildQuoteMarkdown(opts: {
       : `- **Considerando:** _(no atribuido; extracto de cuerpo)_`,
     opts.competencia ? `- **Competencia:** ${opts.competencia}` : undefined,
     opts.resultado ? `- **Resultado:** ${opts.resultado}` : undefined,
-    `- **Integridad:** \`verified\` — ${opts.evidenceLabel}`,
+    `- **Integridad:** \`${opts.integrityLevel ?? "verified"}\` — ${opts.evidenceLabel}`,
     opts.url ? `- **URL:** ${opts.url}` : undefined,
     opts.pdfUrl ? `- **PDF:** ${opts.pdfUrl}` : undefined,
     "",
@@ -239,6 +270,8 @@ function quoteFromContent(opts: {
   consulta?: string;
   maxChars: number;
   evidenceLabel: string;
+  /** "metadata" when content is a summary (e.g. TC ficha doctrina), not full body text. */
+  evidence?: "full_text" | "metadata";
   sourceMode: "tc_api" | "texto_pegado";
   extraWarnings?: string[];
 }): JurisprudenciaQuote {
@@ -325,6 +358,7 @@ function quoteFromContent(opts: {
     competencia: opts.competencia,
     resultado: opts.resultado,
     evidenceLabel: opts.evidenceLabel,
+    integrityLevel: opts.evidence === "metadata" ? "metadata" : "verified",
     url: opts.url,
     pdfUrl: opts.pdfUrl,
     blockquote,
@@ -346,7 +380,7 @@ function quoteFromContent(opts: {
     blockquote,
     url: opts.url ?? "",
     pdfUrl: opts.pdfUrl,
-    evidence: "full_text",
+    evidence: opts.evidence ?? "full_text",
     sourceMode: opts.sourceMode,
     warnings: allWarnings,
     considerandosDisponibles: disponibles,
@@ -470,6 +504,11 @@ export async function citarJurisprudencia(opts: {
   const anio =
     opts.anio?.trim() ||
     yearFromFechaOrRol(sentence.fecha, sentence.rolDisplay);
+  if (sentence.isDoctrinaSummary && opts.considerando) {
+    throw new Error(
+      `NO VERIFICADO: el fallo rol ${sentence.rolDisplay} no está indexado en el buscador de texto íntegro del TC; solo se recuperó el resumen oficial de doctrina (sin considerandos numerados). No se puede atribuir al considerando «${opts.considerando}». Llama sin ese parámetro para citar el resumen, o usa el PDF oficial (${sentence.pdfUrl ?? "ver ficha"}) para el texto completo.`,
+    );
+  }
   return quoteFromContent({
     content: sentence.content,
     tribunal: opts.tribunal?.trim() || "Tribunal Constitucional",
@@ -481,10 +520,18 @@ export async function citarJurisprudencia(opts: {
     resultado: sentence.resultado,
     url: opts.url?.trim() || sentence.fichaUrl,
     pdfUrl: sentence.pdfUrl,
-    considerando: opts.considerando,
-    consulta: opts.consulta,
+    considerando: sentence.isDoctrinaSummary ? undefined : opts.considerando,
+    consulta: sentence.isDoctrinaSummary ? undefined : opts.consulta,
     maxChars,
-    evidenceLabel: "texto íntegro (buscador oficial TC, gratuito)",
+    evidenceLabel: sentence.isDoctrinaSummary
+      ? "resumen oficial de doctrina TC (ficha); el fallo no está en el índice de texto íntegro — verifica el PDF oficial para el cuerpo completo"
+      : "texto íntegro (buscador oficial TC, gratuito)",
+    evidence: sentence.isDoctrinaSummary ? "metadata" : "full_text",
     sourceMode: "tc_api",
+    extraWarnings: sentence.isDoctrinaSummary
+      ? [
+          "Este fragmento es el resumen de doctrina oficial del TC, no el cuerpo íntegro de la sentencia (no indexada en el buscador de texto). Verifica el PDF oficial antes de citar considerandos específicos.",
+        ]
+      : undefined,
   });
 }

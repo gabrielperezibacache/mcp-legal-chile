@@ -4,7 +4,7 @@ Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps 
 
 **Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.11.1
+**Versión:** 1.11.2
 
 ## Proyecto libre
 

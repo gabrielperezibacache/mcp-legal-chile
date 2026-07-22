@@ -64,6 +64,7 @@ function toCitation(b: SparqlBinding): CitationResult | null {
   const norma = bindingValue(b, "norma");
   const tipo = bindingValue(b, "tipoNombre");
   const organismo = bindingValue(b, "organismo");
+  const rel = bindingValue(b, "rel");
 
   const citationParts = [
     tipo ? tipo : number ? `Norma ${number}` : undefined,
@@ -76,7 +77,8 @@ function toCitation(b: SparqlBinding): CitationResult | null {
   return {
     source: "legislacion",
     title: title.trim(),
-    citation: citationParts.join(" ") || title.trim(),
+    citation:
+      (rel ? `[${rel}] ` : "") + (citationParts.join(" ") || title.trim()),
     date,
     url: leyChileUrl(code, norma),
     secondaryUrl: norma,
@@ -89,6 +91,7 @@ function toCitation(b: SparqlBinding): CitationResult | null {
       tipo,
       organismo,
       bcnUri: norma,
+      relacion: rel,
     },
   };
 }
@@ -512,39 +515,62 @@ export async function normasRelacionadas(
   idNorma: string,
 ): Promise<SearchResponse> {
   const code = idNorma.replace(/\D/g, "");
-  // BCN relationship predicates vary; try subjects/title proximity via same leychile family,
-  // and always return historia deep-link.
+  // Query the explicit BCN relationship predicates (modifiesTo, isModifiedBy, recasts,
+  // isRectifiedBy, isRegulatedBy, agreeWith) instead of a fuzzy title-similarity scan.
+  // The fuzzy scan requires an unbound triple pattern over the whole graph and routinely
+  // times out (>10s) against the public endpoint; the direct predicate lookup below
+  // resolves in well under a second.
   const sparql = `
 PREFIX bcnnorms: <http://datos.bcn.cl/ontologies/bcn-norms#>
 PREFIX dc: <http://purl.org/dc/elements/1.1/>
 
-SELECT DISTINCT ?norma ?title ?number ?date ?code
+SELECT DISTINCT ?rel ?norma ?title ?number ?date ?code
 WHERE {
-  ?ref a bcnnorms:Norm .
-  ?ref bcnnorms:leychileCode ?refCode .
-  FILTER(?refCode = ${code})
-  OPTIONAL { ?ref dc:title ?refTitle }
-  ?norma a bcnnorms:Norm .
+  ?ref bcnnorms:leychileCode ${code} .
+  {
+    ?ref bcnnorms:modifiesTo ?norma . BIND("modifica a" AS ?rel)
+  } UNION {
+    ?ref bcnnorms:isModifiedBy ?norma . BIND("modificada por" AS ?rel)
+  } UNION {
+    ?ref bcnnorms:recasts ?norma . BIND("refunde a" AS ?rel)
+  } UNION {
+    ?ref bcnnorms:isRectifiedBy ?norma . BIND("rectificada por" AS ?rel)
+  } UNION {
+    ?ref bcnnorms:isRegulatedBy ?norma . BIND("regulada por" AS ?rel)
+  } UNION {
+    ?ref bcnnorms:agreeWith ?norma . BIND("concuerda con" AS ?rel)
+  }
   ?norma dc:title ?title .
   OPTIONAL { ?norma bcnnorms:hasNumber ?number }
   OPTIONAL { ?norma bcnnorms:publishDate ?date }
   OPTIONAL { ?norma bcnnorms:leychileCode ?code }
-  FILTER(BOUND(?refTitle) && CONTAINS(LCASE(STR(?title)), LCASE(SUBSTR(STR(?refTitle), 1, 18))))
-  FILTER(?code != ${code})
 }
 ORDER BY DESC(?date)
-LIMIT 12
+LIMIT 30
 `.trim();
 
   try {
     const data = await runSparql(sparql);
-    const results = bindingsToResults(data.results.bindings, 8);
+    const results = bindingsToResults(data.results.bindings, 12);
+    if (results.length === 0) {
+      return {
+        query: `relacionadas idNorma=${code}`,
+        source: "legislacion",
+        results: [],
+        warnings: [
+          "BCN no registra relaciones estructuradas (modifica/modificada por/refunde/etc.) para esta norma; revisa la historia oficial en LeyChile.",
+        ],
+        searchUrls: {
+          historia: `https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
+        },
+      };
+    }
     return {
       query: `relacionadas idNorma=${code}`,
       source: "legislacion",
       results,
       warnings: [
-        "Relaciones inferidas por similitud de título en BCN; verifica en la historia de la norma en LeyChile.",
+        "Relaciones estructuradas de BCN (modifica/modificada por/refunde/rectificada por/regulada por/concuerda con); verifica en la historia oficial de la norma en LeyChile.",
       ],
       searchUrls: {
         historia: `https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
@@ -556,7 +582,7 @@ LIMIT 12
       source: "legislacion",
       results: [],
       warnings: [
-        `No se pudieron inferir relaciones SPARQL: ${error instanceof Error ? error.message : String(error)}`,
+        `No se pudieron obtener relaciones SPARQL: ${error instanceof Error ? error.message : String(error)}`,
         "Usa la historia oficial en LeyChile.",
       ],
       searchUrls: {

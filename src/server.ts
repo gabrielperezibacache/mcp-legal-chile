@@ -40,7 +40,7 @@ import {
 import type { SearchResponse } from "./types.js";
 import { formatResultsJson } from "./util.js";
 
-const VERSION = "1.11.1";
+const VERSION = "1.11.2";
 /** Must exceed TC keyword latency (often 6–14s) without cascading into slow web scrape. */
 const SEARCH_TOOL_TIMEOUT_MS = Number(
   process.env.SEARCH_TOOL_TIMEOUT_MS ?? 22_000,
@@ -250,7 +250,7 @@ export function createServer(): McpServer {
     {
       title: "Normas relacionadas",
       description:
-        "Candidatas relacionadas por similitud BCN + enlace a historia LeyChile.",
+        "Normas relacionadas por predicados estructurados de BCN (modifica/modificada por/refunde/rectificada por/regulada por/concuerda con) + enlace a historia LeyChile.",
       inputSchema: {
         id_norma: z.string().min(1),
         formato: formatoSchema,
@@ -674,7 +674,7 @@ export function createServer(): McpServer {
     {
       title: "Obtener fallo del Tribunal Constitucional",
       description:
-        "Metadatos + extracto/doctrina + índice de considerandos. Para citar un considerando exacto usa citar_jurisprudencia.",
+        "Metadatos + extracto/doctrina + índice de considerandos. Si el ROL no está en el índice de texto del TC, cae a un resumen oficial de ficha (integridad metadata, marcado explícitamente). Para citar un considerando exacto usa citar_jurisprudencia.",
       inputSchema: {
         rol: z.string().min(3).describe("ROL TC, ej. 9666-20 o 9666-2020"),
         formato: formatoSchema,
@@ -700,7 +700,7 @@ export function createServer(): McpServer {
     {
       title: "Citar fragmento exacto de jurisprudencia",
       description:
-        "Cita formal (tribunal, tipo, ROL, año, considerando) + blockquote. Sin texto: API gratuita TC. Con texto pegado: fallos PJUD u otros (sin APIs de pago).",
+        "Cita formal (tribunal, tipo, ROL, año, considerando) + blockquote. Sin texto: API gratuita TC (si el ROL no está indexado, usa el resumen oficial de ficha e integridad=metadata; rechaza `considerando` en ese caso para no inventar). Con texto pegado: fallos PJUD u otros (sin APIs de pago).",
       inputSchema: {
         rol: z.string().min(3).describe("ROL, ej. 9666-2020 o 12345-2020"),
         texto: z
@@ -962,13 +962,16 @@ export function createServer(): McpServer {
             obtener_inciso: "verified / full_text heurístico",
             citar_texto_legal: "verified / full_text + cita formal",
             citar_jurisprudencia:
-              "verified solo si TC API o texto pegado; rechaza considerando inexistente",
+              "verified (full_text) si TC indexado o texto pegado; metadata (resumen ficha) si el ROL no está en el índice de texto TC; rechaza considerando inexistente",
             buscar_legislacion: "candidate / metadata BCN",
+            normas_relacionadas:
+              "candidate / metadata BCN (predicados estructurados: modifica/modificada por/refunde/rectificada por/regulada por/concuerda con)",
             buscar_jurisprudencia:
               "candidate o portal_stub (nunca afirmar ratio desde links)",
             buscar_tc: "candidate / TC API metadata + PDF",
             resolver_rol: "candidate / portales + TC",
-            obtener_fallo_tc: "verified extracto + índice considerandos",
+            obtener_fallo_tc:
+              "verified extracto + índice considerandos; metadata (solo ficha/doctrina) si el ROL no está en el índice de texto TC",
             buscar_dictamenes: "candidate / link_only (verificar CGR)",
             buscar_doctrina: "candidate / metadata OA (no vinculante)",
             buscar_doctrina_latam: "candidate / metadata OA LATAM",

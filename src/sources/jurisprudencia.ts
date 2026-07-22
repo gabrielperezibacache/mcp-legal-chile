@@ -572,26 +572,39 @@ export async function obtenerFalloTc(
     hit = exactTcHits(hits, norm)[0] ?? hits.find((h) => rolMatches(h.rol, norm));
     if (hit) break;
   }
-  if (!hit) {
-    throw new Error(`No se encontró sentencia TC para rol ${norm.display}`);
-  }
 
   let ficha: Awaited<ReturnType<typeof getTcFicha>> | undefined;
-  try {
-    ficha = await getTcFicha(hit.rol, signal);
-  } catch {
+  if (hit) {
     try {
-      ficha = await getTcFicha(hit.id, signal);
+      ficha = await getTcFicha(hit.rol, signal);
     } catch {
-      /* optional enrichment */
+      try {
+        ficha = await getTcFicha(hit.id, signal);
+      } catch {
+        /* optional enrichment */
+      }
+    }
+  } else {
+    // Not every ROL is indexed in the free-text search
+    // (`/api/extended/sentencias`); the ficha endpoint is keyed directly by
+    // folio/ROL and often still resolves it, with the official doctrina
+    // summary. Fall back to that instead of failing outright.
+    try {
+      ficha = await getTcFicha(norm.numero, signal);
+    } catch {
+      /* fall through to the error below */
+    }
+    if (!ficha) {
+      throw new Error(`No se encontró sentencia TC para rol ${norm.display}`);
     }
   }
 
+  const fichaOnly = !hit;
   const excerpt = pickTcExcerpt({
     doctrina: ficha?.doctrina,
-    highlights: hit.highlights,
-    excerpt: hit.excerpt,
-    content: hit.content,
+    highlights: hit?.highlights,
+    excerpt: hit?.excerpt,
+    content: hit?.content,
   });
   const blockquote = excerpt
     .split(/(?<=\.)\s+/)
@@ -604,8 +617,8 @@ export async function obtenerFalloTc(
     undefined;
   const tipoResolucion = ficha?.tipoResolucion ?? "Sentencia";
   const rolDisplay = norm.display;
-  const url = ficha?.fichaUrl ?? hit.fichaUrl;
-  const pdfUrl = ficha?.pdfUrl ?? hit.pdfUrl;
+  const url = ficha?.fichaUrl ?? hit?.fichaUrl ?? "";
+  const pdfUrl = ficha?.pdfUrl ?? hit?.pdfUrl;
   const citation = formatChileanCitation({
     tribunal: "Tribunal Constitucional",
     tipo: tipoResolucion,
@@ -613,7 +626,7 @@ export async function obtenerFalloTc(
     anio,
     url,
   }).citation;
-  const considerandos = parseConsiderandos(hit.content ?? "")
+  const considerandos = parseConsiderandos(hit?.content ?? "")
     .slice(0, 60)
     .map((c) => ({ numero: c.numero, label: c.label }));
 
@@ -636,13 +649,15 @@ export async function obtenerFalloTc(
     considerandos.length
       ? `- **Considerandos detectados:** ${considerandos.length}`
       : undefined,
-    `- **Integridad:** \`verified\` (extracto) / verificar PDF para citas procesales`,
+    fichaOnly
+      ? `- **Integridad:** \`metadata\` — no indexado en el buscador de texto íntegro del TC; se muestra el resumen oficial de doctrina (ficha). Usa el PDF oficial para el cuerpo completo.`
+      : `- **Integridad:** \`verified\` (extracto) / verificar PDF para citas procesales`,
     `- **Ficha:** ${url}`,
     pdfUrl ? `- **PDF oficial:** ${pdfUrl}` : undefined,
     "",
-    "**Extracto / doctrina (TC):**",
+    fichaOnly ? "**Doctrina (resumen oficial TC):**" : "**Extracto / doctrina (TC):**",
     "",
-    blockquote,
+    blockquote || "_Sin extracto disponible; consulta el PDF oficial._",
     "",
     considerandos.length
       ? [
@@ -657,7 +672,9 @@ export async function obtenerFalloTc(
           "→ Cita textual: `citar_jurisprudencia` con `rol` + `considerando` (ej. `15`) o `consulta` temática.",
           "",
         ].join("\n")
-      : undefined,
+      : fichaOnly
+        ? "_Este fallo no está en el índice de texto íntegro del TC; no hay considerandos numerados disponibles vía este MCP. Usa el PDF oficial arriba para citar considerandos específicos._\n"
+        : undefined,
     "_Fuente: buscador oficial del Tribunal Constitucional (tcchile.cl)._",
   ]
     .filter((x): x is string => Boolean(x))
@@ -666,7 +683,7 @@ export async function obtenerFalloTc(
   return {
     rol: rolDisplay,
     citation,
-    competencia: hit.competencia ?? ficha?.competencia,
+    competencia: hit?.competencia ?? ficha?.competencia,
     tipoResolucion,
     fecha: ficha?.fecha,
     anio,
