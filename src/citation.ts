@@ -57,9 +57,10 @@ export function formatChileanCitation(input: ChileanCitationInput): {
     const doi = input.doi
       ? ` DOI: ${input.doi.replace(/^https?:\/\/doi\.org\//i, "")}`
       : "";
-    const citation = `${authors} ${year} ${title ?? ""}${loc ? `, ${loc}` : ""}.${doi}`
-      .replace(/\s+/g, " ")
-      .trim();
+    const citation =
+      `${authors} ${year} ${title ?? ""}${loc ? `, ${loc}` : ""}.${doi}`
+        .replace(/\s+/g, " ")
+        .trim();
     return {
       citation,
       url:

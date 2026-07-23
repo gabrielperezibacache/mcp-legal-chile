@@ -57,7 +57,13 @@ export const TRIBUNAL_PORTALS: TribunalPortal[] = [
   {
     id: "oral_penal",
     name: "Tribunal de Juicio Oral en lo Penal",
-    aliases: ["top", "oral en lo penal", "juicio oral", "tribunal oral", "tribunal oral en lo penal"],
+    aliases: [
+      "top",
+      "oral en lo penal",
+      "juicio oral",
+      "tribunal oral",
+      "tribunal oral en lo penal",
+    ],
     sites: ["pjud.cl"],
     searchUrl: () => "https://www.pjud.cl/portal-unificado-sentencias",
   },
@@ -161,11 +167,7 @@ export const TRIBUNAL_PORTALS: TribunalPortal[] = [
 
 /** Lowercase + strip diacritics so "Apelaciones" / "apelación" match catalog aliases. */
 export function foldTribunalText(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .trim();
+  return value.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").trim();
 }
 
 export function matchTribunalPortal(

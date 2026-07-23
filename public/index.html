@@ -1,13 +1,67 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MCP Legal Chile — El derecho chileno dentro de tu asistente de IA</title>
+    <title>
+      MCP Legal Chile — El derecho chileno dentro de tu asistente de IA
+    </title>
     <meta
       name="description"
       content="Conector MCP para consultar legislación, jurisprudencia, doctrina y dictámenes chilenos con citas y fuentes verificables."
     />
+    <meta name="theme-color" content="#0f4c5c" />
+    <link rel="canonical" href="https://mcp-legal-chile.onrender.com/" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2313212e'/%3E%3Ctext x='32' y='43' font-family='Georgia,serif' font-size='30' font-weight='700' fill='%23c45c26' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E"
+    />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://mcp-legal-chile.onrender.com/" />
+    <meta
+      property="og:title"
+      content="MCP Legal Chile — El derecho chileno dentro de tu asistente de IA"
+    />
+    <meta
+      property="og:description"
+      content="Conector MCP libre y gratuito: legislación con texto oficial LeyChile, jurisprudencia, doctrina y dictámenes chilenos con citas verificables."
+    />
+    <meta property="og:locale" content="es_CL" />
+    <meta property="og:site_name" content="MCP Legal Chile" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary" />
+    <meta
+      name="twitter:title"
+      content="MCP Legal Chile — El derecho chileno dentro de tu asistente de IA"
+    />
+    <meta
+      name="twitter:description"
+      content="Conector MCP libre y gratuito: legislación, jurisprudencia, doctrina y dictámenes chilenos con citas verificables."
+    />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "MCP Legal Chile",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Any (Model Context Protocol)",
+        "description": "Conector MCP libre y gratuito del derecho chileno: legislación con texto oficial LeyChile, jurisprudencia, doctrina y dictámenes con citas verificables.",
+        "url": "https://mcp-legal-chile.onrender.com/",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "license": "https://opensource.org/licenses/MIT",
+        "inLanguage": "es-CL"
+      }
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -39,8 +93,16 @@
         color: var(--ink);
         font-family: "Source Sans 3", sans-serif;
         background:
-          radial-gradient(1200px 600px at 10% -10%, rgba(196, 92, 38, 0.16), transparent 55%),
-          radial-gradient(900px 500px at 100% 0%, rgba(15, 76, 92, 0.18), transparent 50%),
+          radial-gradient(
+            1200px 600px at 10% -10%,
+            rgba(196, 92, 38, 0.16),
+            transparent 55%
+          ),
+          radial-gradient(
+            900px 500px at 100% 0%,
+            rgba(15, 76, 92, 0.18),
+            transparent 50%
+          ),
           linear-gradient(180deg, #efe8da 0%, var(--paper) 38%, #ebe4d6 100%);
         min-height: 100vh;
       }
@@ -93,7 +155,9 @@
         background: rgba(255, 255, 255, 0.45);
         backdrop-filter: blur(6px);
         padding: 0.55rem 0.95rem;
-        transition: transform 180ms ease, background 180ms ease;
+        transition:
+          transform 180ms ease,
+          background 180ms ease;
       }
 
       .nav-cta:hover {
@@ -163,7 +227,9 @@
         display: inline-flex;
         align-items: center;
         gap: 0.45rem;
-        transition: transform 180ms ease, box-shadow 180ms ease;
+        transition:
+          transform 180ms ease,
+          box-shadow 180ms ease;
       }
 
       .btn:hover {
@@ -331,7 +397,8 @@
           <h1>El derecho chileno, dentro de tu asistente de IA</h1>
           <p class="lead">
             Conector MCP de producción para abogados: texto oficial LeyChile,
-            packs de investigación y citas verificables — sin inventar precedentes.
+            packs de investigación y citas verificables — sin inventar
+            precedentes.
           </p>
           <div class="actions">
             <a class="btn btn-primary" href="#conectar">Conectar ahora</a>
@@ -339,7 +406,9 @@
           </div>
           <div class="url-box" id="conectar">
             <div>
-              <div class="eyebrow" style="margin-bottom: 0.35rem">URL del conector</div>
+              <div class="eyebrow" style="margin-bottom: 0.35rem">
+                URL del conector
+              </div>
               <code id="mcp-url">https://TU-DOMINIO/mcp</code>
             </div>
             <button class="copy" type="button" id="copy-btn">Copiar URL</button>
@@ -377,8 +446,8 @@
             <article class="source">
               <h3>Dictámenes</h3>
               <p>
-                Pronunciamientos de la administración del Estado, con enlaces
-                al portal de la Contraloría y fuentes públicas.
+                Pronunciamientos de la administración del Estado, con enlaces al
+                portal de la Contraloría y fuentes públicas.
               </p>
             </article>
           </div>
@@ -394,7 +463,8 @@
               <h3>Texto íntegro</h3>
               <p>
                 Artículos y cuerpo normativo desde el XML de LeyChile
-                (<code>obtener_articulo</code>, <code>obtener_texto_norma</code>).
+                (<code>obtener_articulo</code>,
+                <code>obtener_texto_norma</code>).
               </p>
             </article>
             <article class="source">
@@ -447,8 +517,8 @@
         <section>
           <h2>Conéctalo en minutos</h2>
           <p class="section-lead">
-            Todo ocurre en tu asistente. No necesitas instalar nada local si usas
-            un conector remoto.
+            Todo ocurre en tu asistente. No necesitas instalar nada local si
+            usas un conector remoto.
           </p>
           <div class="steps">
             <div class="step">
@@ -488,16 +558,18 @@
       const urlEl = document.getElementById("mcp-url");
       const mcpUrl = `${window.location.origin}/mcp`;
       urlEl.textContent = mcpUrl;
-      document.getElementById("copy-btn").addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(mcpUrl);
-          const btn = document.getElementById("copy-btn");
-          btn.textContent = "Copiado";
-          setTimeout(() => (btn.textContent = "Copiar URL"), 1500);
-        } catch {
-          prompt("Copia esta URL:", mcpUrl);
-        }
-      });
+      document
+        .getElementById("copy-btn")
+        .addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(mcpUrl);
+            const btn = document.getElementById("copy-btn");
+            btn.textContent = "Copiado";
+            setTimeout(() => (btn.textContent = "Copiar URL"), 1500);
+          } catch {
+            prompt("Copia esta URL:", mcpUrl);
+          }
+        });
     </script>
   </body>
 </html>

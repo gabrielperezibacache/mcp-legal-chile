@@ -5,7 +5,7 @@ import { searchWeb, webHitsToCitations } from "./websearch.js";
 
 function extractDictamenNumber(query: string): string | undefined {
   const match = query.match(
-    /(?:dictamen(?:es)?|n[ºo°.]?)\s*([0-9]{1,6}(?:\s*[-\/]\s*[0-9]{2,4})?)/i,
+    /(?:dictamen(?:es)?|n[ºo°.]?)\s*([0-9]{1,6}(?:\s*[-/]\s*[0-9]{2,4})?)/i,
   );
   return match?.[1]?.replace(/\s+/g, "");
 }

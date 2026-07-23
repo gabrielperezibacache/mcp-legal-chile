@@ -4,10 +4,7 @@
  * Cuotas persisten en Redis cuando REDIS_URL está configurado.
  */
 
-import {
-  getSharedRedis,
-  secondsUntilUtcDayEnd,
-} from "./redisClient.js";
+import { getSharedRedis, secondsUntilUtcDayEnd } from "./redisClient.js";
 
 type QuotaState = { day: string; used: number };
 
@@ -25,7 +22,10 @@ function configuredKeys(): Map<string, { name: string; dailyLimit: number }> {
   const raw = process.env.MCP_API_KEYS?.trim();
   const map = new Map<string, { name: string; dailyLimit: number }>();
   if (!raw) return map;
-  for (const part of raw.split(",").map((p) => p.trim()).filter(Boolean)) {
+  for (const part of raw
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean)) {
     const bits = part.split(":");
     if (bits.length >= 3) {
       map.set(bits[1], {
@@ -161,7 +161,10 @@ export async function quotaSnapshot() {
   }
 
   for (const [token, v] of usage.entries()) {
-    if (v.day === day && !clients.some((c) => c.keyPrefix === token.slice(0, 6))) {
+    if (
+      v.day === day &&
+      !clients.some((c) => c.keyPrefix === token.slice(0, 6))
+    ) {
       clients.push({
         keyPrefix: token.slice(0, 6),
         day: v.day,

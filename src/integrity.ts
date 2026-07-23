@@ -49,13 +49,11 @@ export function hasTraceableUrl(result: CitationResult): boolean {
  * Seal a search response so the assistant cannot treat stubs/empty as verified hits.
  */
 export function sealSearchResponse(response: SearchResponse): SearchResponse {
-  const sealedResults = response.results
-    .filter(hasTraceableUrl)
-    .map((r) => {
-      const evidence = r.evidence ?? "link_only";
-      const integrity = integrityOf({ ...r, evidence });
-      return withIntegrity(r, integrity, evidence);
-    });
+  const sealedResults = response.results.filter(hasTraceableUrl).map((r) => {
+    const evidence = r.evidence ?? "link_only";
+    const integrity = integrityOf({ ...r, evidence });
+    return withIntegrity(r, integrity, evidence);
+  });
 
   const stubCount = sealedResults.filter(
     (r) => integrityOf(r) === "portal_stub",

@@ -10,8 +10,9 @@ export interface CaseIdentifiers {
 }
 
 const ROL_RE =
-  /\b(?:rol|rol\s*n[ºo°.]?)\s*[:.]?\s*([0-9]{1,6}\s*[-–.\/]\s*[0-9]{2,4})\b/i;
-const TC_ROL_RE = /\b([0-9]{3,5})\s*[-–]\s*([0-9]{2,4})(?:\s*[-–]\s*(INA|INC|CPT|CAA|CDS))?\b/i;
+  /\b(?:rol|rol\s*n[ºo°.]?)\s*[:.]?\s*([0-9]{1,6}\s*[-–./]\s*[0-9]{2,4})\b/i;
+const TC_ROL_RE =
+  /\b([0-9]{3,5})\s*[-–]\s*([0-9]{2,4})(?:\s*[-–]\s*(INA|INC|CPT|CAA|CDS))?\b/i;
 
 export interface NormalizedRol {
   raw: string;
@@ -64,7 +65,10 @@ export function normalizeRol(rol: string): NormalizedRol {
  * Exact-ish ROL match: same case number, and same year when both sides have one.
  * Avoids false positives like 966-2020 vs 9666-2020 from naive substring checks.
  */
-export function rolMatches(hitRol: string, target: NormalizedRol | string): boolean {
+export function rolMatches(
+  hitRol: string,
+  target: NormalizedRol | string,
+): boolean {
   const norm = typeof target === "string" ? normalizeRol(target) : target;
   if (!norm.numero) return false;
   const hit = normalizeRol(hitRol);
@@ -76,14 +80,14 @@ export function rolMatches(hitRol: string, target: NormalizedRol | string): bool
 /** Extrae mención explícita de ROL desde texto libre ("rol 1234-2020"). */
 export function extractRolMention(text: string): string | undefined {
   const m = text.match(
-    /\b(?:rol|rol\s*n[ºo°.]?)\s*[:.]?\s*([0-9]{1,6}\s*[-–.\/]\s*[0-9]{2,4}(?:\s*[-–]\s*[A-Z]{2,4})?)\b/i,
+    /\b(?:rol|rol\s*n[ºo°.]?)\s*[:.]?\s*([0-9]{1,6}\s*[-–./]\s*[0-9]{2,4}(?:\s*[-–]\s*[A-Z]{2,4})?)\b/i,
   );
   return m?.[1]?.replace(/\s+/g, "");
 }
-const RIT_RE = /\bRIT\s*[:.]?\s*([A-Z0-9\-–\/]+)\b/i;
+const RIT_RE = /\bRIT\s*[:.]?\s*([A-Z0-9\-–/]+)\b/i;
 const RUC_RE = /\bRUC\s*[:.]?\s*([0-9]{1,12}\s*-\s*[0-9Kk])\b/i;
 const DICTAMEN_RE =
-  /\bdictamen(?:es)?\s*n[ºo°.]?\s*([0-9]{1,6}(?:\s*[-\/]\s*[0-9]{2,4})?)/i;
+  /\bdictamen(?:es)?\s*n[ºo°.]?\s*([0-9]{1,6}(?:\s*[-/]\s*[0-9]{2,4})?)/i;
 const YEAR_RE = /\b(19|20)\d{2}\b/;
 
 function detectTribunal(text: string): string | undefined {

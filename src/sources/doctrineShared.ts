@@ -51,10 +51,7 @@ const LEGAL_TOKENS = [
 ];
 
 /** Shared query enrichment for OpenAlex / DOAJ / Crossref. */
-export function enrichDoctrineQuery(
-  query: string,
-  country?: string,
-): string {
+export function enrichDoctrineQuery(query: string, country?: string): string {
   const q = query.trim();
   if (country === "BR") {
     return /\bdireito\b|\bjurid/i.test(q) ? q : `${q} direito`;
@@ -67,10 +64,7 @@ export function enrichDoctrineQuery(
 }
 
 function fold(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "");
+  return s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 }
 
 function queryTokens(query: string): string[] {
@@ -122,10 +116,7 @@ export function normalizeAuthorName(name: string): string {
   return `${family}, ${initials}`;
 }
 
-export function formatAuthorFromParts(
-  given?: string,
-  family?: string,
-): string {
+export function formatAuthorFromParts(given?: string, family?: string): string {
   const g = given?.trim();
   const f = family?.trim();
   if (f && g) {
@@ -175,8 +166,9 @@ export function scoreDoctrineRecord(
     else if (abstractFold.includes(bg)) score += 6;
   }
 
-  const inCatalog =
-    Boolean(record.journal && catalogJournalNames.has(journalFold));
+  const inCatalog = Boolean(
+    record.journal && catalogJournalNames.has(journalFold),
+  );
   if (inCatalog) score += 14;
   if (record.country === "CL") score += 5;
   if (record.abstract) score += 6;
@@ -380,7 +372,9 @@ function preferRecord(a: DoctrineRecord, b: DoctrineRecord): DoctrineRecord {
   return buildDoctrineRecord(merged);
 }
 
-export function dedupeDoctrineRecords(records: DoctrineRecord[]): DoctrineRecord[] {
+export function dedupeDoctrineRecords(
+  records: DoctrineRecord[],
+): DoctrineRecord[] {
   const map = new Map<string, DoctrineRecord>();
   for (const r of records) {
     const key = doctrineDedupeKey(r);

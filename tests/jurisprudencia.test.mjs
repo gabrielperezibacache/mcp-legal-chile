@@ -18,15 +18,9 @@ import { formatChileanCitation } from "../dist/citation.js";
 import { tcCitation } from "../dist/sources/tcBuscador.js";
 
 test("matchTribunalPortal ignora acentos", () => {
-  assert.equal(
-    matchTribunalPortal("Corte de Apelaciónes")?.id,
-    "ca",
-  );
+  assert.equal(matchTribunalPortal("Corte de Apelaciónes")?.id, "ca");
   assert.equal(matchTribunalPortal("Garantia")?.id, "garantia");
-  assert.equal(
-    matchTribunalPortal("Tribunal Constitucional")?.id,
-    "tc",
-  );
+  assert.equal(matchTribunalPortal("Tribunal Constitucional")?.id, "tc");
 });
 
 test("rolMatches exige mismo número y año", () => {

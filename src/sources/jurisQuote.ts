@@ -7,7 +7,11 @@ import {
   rankConsiderandos,
   type Considerando,
 } from "./considerandos.js";
-import { excerptForQuote, getTcFicha, searchTcSentencias } from "./tcBuscador.js";
+import {
+  excerptForQuote,
+  getTcFicha,
+  searchTcSentencias,
+} from "./tcBuscador.js";
 
 export interface JurisprudenciaQuote {
   citation: string;
@@ -30,7 +34,10 @@ export interface JurisprudenciaQuote {
   markdown: string;
 }
 
-function yearFromFechaOrRol(fecha?: string, rolDisplay?: string): string | undefined {
+function yearFromFechaOrRol(
+  fecha?: string,
+  rolDisplay?: string,
+): string | undefined {
   if (fecha && /^(19|20)\d{2}/.test(fecha)) return fecha.slice(0, 4);
   const m = rolDisplay?.match(/-(20\d{2}|19\d{2})\b/);
   return m?.[1];
@@ -62,9 +69,7 @@ async function loadTcSentence(
   isDoctrinaSummary?: boolean;
 }> {
   const norm = normalizeRol(rol);
-  let hit:
-    | Awaited<ReturnType<typeof searchTcSentencias>>[number]
-    | undefined;
+  let hit: Awaited<ReturnType<typeof searchTcSentencias>>[number] | undefined;
   for (const term of norm.searchTerms) {
     const hits = await searchTcSentencias(term, 8, signal, { anio: norm.anio });
     hit =
@@ -207,7 +212,9 @@ function buildQuoteMarkdown(opts: {
 }): string {
   const cons =
     opts.considerandoLabel ||
-    (opts.considerandoNumero != null ? `${opts.considerandoNumero}º` : undefined);
+    (opts.considerandoNumero != null
+      ? `${opts.considerandoNumero}º`
+      : undefined);
 
   return [
     `### Jurisprudencia citada`,
@@ -236,15 +243,16 @@ function buildQuoteMarkdown(opts: {
     "",
     `_En el escrito: «${opts.citation}»._`,
     opts.warnings.length
-      ? ["", "### Advertencias", ...opts.warnings.map((w) => `- ${w}`)].join("\n")
+      ? ["", "### Advertencias", ...opts.warnings.map((w) => `- ${w}`)].join(
+          "\n",
+        )
       : undefined,
     opts.disponibles.length
       ? [
           "",
           "### Otros considerandos detectados",
           ...opts.disponibles.map(
-            (c) =>
-              `- ${c.numero != null ? `${c.numero}º` : "?"} — ${c.label}`,
+            (c) => `- ${c.numero != null ? `${c.numero}º` : "?"} — ${c.label}`,
           ),
           "",
           "→ Vuelve a llamar con `considerando` (ej. `15` o `décimo quinto`) o `consulta` temática.",
@@ -341,10 +349,12 @@ function quoteFromContent(opts: {
   });
 
   const blockquote = toBlockquote(texto);
-  const disponibles = (ranked.length ? ranked : items).slice(0, 40).map((c) => ({
-    numero: c.numero,
-    label: c.label,
-  }));
+  const disponibles = (ranked.length ? ranked : items)
+    .slice(0, 40)
+    .map((c) => ({
+      numero: c.numero,
+      label: c.label,
+    }));
 
   const markdown = buildQuoteMarkdown({
     citation: cited.citation,

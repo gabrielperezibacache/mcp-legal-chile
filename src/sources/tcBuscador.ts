@@ -4,7 +4,8 @@ import { webCache } from "../cache.js";
 import { fetchJson } from "../util.js";
 
 const TC_API = "https://buscador-backend.tcchile.cl/api/extended";
-const TC_FICHA_API = "https://buscador-backend.tcchile.cl/api/buscadorexterno/ficha";
+const TC_FICHA_API =
+  "https://buscador-backend.tcchile.cl/api/buscadorexterno/ficha";
 const TC_Buscador_UI = "https://buscador.tcchile.cl";
 /** TC keyword search often takes 6–14s; keep under SEARCH_TOOL_TIMEOUT_MS. */
 const TC_TIMEOUT_MS = Number(process.env.TC_TIMEOUT_MS ?? 18_000);
@@ -114,11 +115,9 @@ export function normalizeTcSearchQuery(query: string): string {
     .split(/\s+/)
     .filter(Boolean);
   const kept = tokens.filter((t) => {
-    const lower = t
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/\p{M}/gu, "");
-    const foldedStop = TC_STOPWORDS.has(lower) || TC_STOPWORDS.has(t.toLowerCase());
+    const lower = t.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+    const foldedStop =
+      TC_STOPWORDS.has(lower) || TC_STOPWORDS.has(t.toLowerCase());
     return lower.length > 1 && !foldedStop;
   });
   if (kept.length > 0) return kept.join(" ");
@@ -152,7 +151,9 @@ function filterParam(
   names: string[],
 ): string | undefined {
   const row = detalle?.find((d) =>
-    names.some((n) => d.parametro?.nombre?.toLowerCase().includes(n.toLowerCase())),
+    names.some((n) =>
+      d.parametro?.nombre?.toLowerCase().includes(n.toLowerCase()),
+    ),
   );
   if (!row) return undefined;
   if (row.valor) return row.valor.replace(/<[^>]+>/g, " ").trim();
@@ -162,7 +163,10 @@ function filterParam(
     .join("; ");
 }
 
-function hitMatchesYear(hit: { rol: string; content?: string }, anio: string): boolean {
+function hitMatchesYear(
+  hit: { rol: string; content?: string },
+  anio: string,
+): boolean {
   const y = anio.trim();
   if (!/^(19|20)\d{2}$/.test(y)) return true;
   const short = y.slice(-2);
@@ -277,9 +281,15 @@ export async function getTcFicha(
       gestion: filterParam(f.detalle, ["gestión", "gestion"]),
       resultado: filterParam(f.detalle, ["resultado"]),
       doctrina: filterParam(f.detalle, ["doctrina"]),
-      tipoResolucion: filterParam(f.detalle, ["tipo de resolución", "tipo de resolucion"]),
+      tipoResolucion: filterParam(f.detalle, [
+        "tipo de resolución",
+        "tipo de resolucion",
+      ]),
       votosMayoria: filterParam(f.detalle, ["voto mayoría", "voto mayoria"]),
-      articulosCpr: filterParam(f.detalle, ["artículo de la constitución", "articulo de la constitucion"]),
+      articulosCpr: filterParam(f.detalle, [
+        "artículo de la constitución",
+        "articulo de la constitucion",
+      ]),
       fichaUrl: `${TC_Buscador_UI}/#/ficha/${folio}`,
       pdfUrl: f.exist_file ? `${TC_API}/${folio}/download` : undefined,
     };
@@ -298,11 +308,13 @@ export function tcCitation(
       },
 ): string {
   if (typeof competenciaOrOpts === "string" || competenciaOrOpts == null) {
-    return formatChileanCitation({
-      tribunal: "Tribunal Constitucional",
-      tipo: "Sentencia",
-      rol,
-    }).citation + (competenciaOrOpts ? ` (${competenciaOrOpts})` : "");
+    return (
+      formatChileanCitation({
+        tribunal: "Tribunal Constitucional",
+        tipo: "Sentencia",
+        rol,
+      }).citation + (competenciaOrOpts ? ` (${competenciaOrOpts})` : "")
+    );
   }
   return formatChileanCitation({
     tribunal: "Tribunal Constitucional",

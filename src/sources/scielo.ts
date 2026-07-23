@@ -23,7 +23,14 @@ const SCielo_SITES: Record<string, string> = {
   col: "https://www.scielo.org.co",
 };
 
-const ARTICLEMETA_COLLECTIONS = ["chl", "scl", "arg", "mex", "per", "col"] as const;
+const ARTICLEMETA_COLLECTIONS = [
+  "chl",
+  "scl",
+  "arg",
+  "mex",
+  "per",
+  "col",
+] as const;
 
 interface SciELOTag {
   _?: string;
@@ -78,7 +85,10 @@ interface OpenAlexResponse {
   results: OpenAlexWork[];
 }
 
-function pickLang(tags: SciELOTag[] | undefined, lang = "es"): string | undefined {
+function pickLang(
+  tags: SciELOTag[] | undefined,
+  lang = "es",
+): string | undefined {
   if (!tags?.length) return undefined;
   const hit = tags.find((t) => t.l === lang) ?? tags[0];
   return hit?._?.trim() || undefined;
@@ -87,12 +97,18 @@ function pickLang(tags: SciELOTag[] | undefined, lang = "es"): string | undefine
 function parseAuthors(tags: SciELOTag[] | undefined): string[] {
   if (!tags?.length) return [];
   return tags
-    .map((t) => formatAuthorFromParts(t.n, t.s) || [t.n, t.s].filter(Boolean).join(" ").trim())
+    .map(
+      (t) =>
+        formatAuthorFromParts(t.n, t.s) ||
+        [t.n, t.s].filter(Boolean).join(" ").trim(),
+    )
     .filter(Boolean)
     .slice(0, 6);
 }
 
-function parseAbstract(article: Record<string, SciELOTag[]> | undefined): string | undefined {
+function parseAbstract(
+  article: Record<string, SciELOTag[]> | undefined,
+): string | undefined {
   if (!article) return undefined;
   // SciELO ISIS tags commonly used for abstracts.
   for (const key of ["v83", "v85", "v72", "v83a"]) {
@@ -168,9 +184,7 @@ function fromArticleMeta(data: ArticleMetaResponse): DoctrineRecord {
   const pid = normalizeSciELOPid(data.code);
   const collection = data.collection || "chl";
   const title =
-    pickLang(article.v12) ??
-    pickLang(article.v1) ??
-    `Artículo SciELO ${pid}`;
+    pickLang(article.v12) ?? pickLang(article.v1) ?? `Artículo SciELO ${pid}`;
   const authors = parseAuthors(article.v10);
   const journal =
     pickLang(issueMeta.v130) ??
@@ -307,9 +321,7 @@ export async function obtenerArticuloSciELO(
   collection?: string,
 ): Promise<DoctrineRecord> {
   const code = normalizeSciELOPid(pid);
-  const collections = collection
-    ? [collection]
-    : [...ARTICLEMETA_COLLECTIONS];
+  const collections = collection ? [collection] : [...ARTICLEMETA_COLLECTIONS];
 
   let lastError: unknown;
   for (const col of collections) {

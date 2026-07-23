@@ -220,14 +220,16 @@ export function parseConsiderandos(text: string): Considerando[] {
     }
     const key = foldOrdinal(label);
     const start = match.index! + match[0].length;
-    const end = i + 1 < matches.length ? matches[i + 1]!.index! : section.length;
+    const end =
+      i + 1 < matches.length ? matches[i + 1]!.index! : section.length;
     const texto = cleanConsiderandoText(section.slice(start, end));
     if (texto.length < 30) continue;
     const dedupeKey = numero ? `n:${numero}` : `l:${key}`;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
     const citationLabel =
-      (numero ? numberToOrdinalWords(numero) : undefined) ?? label.toLowerCase();
+      (numero ? numberToOrdinalWords(numero) : undefined) ??
+      label.toLowerCase();
     out.push({
       label,
       numero,

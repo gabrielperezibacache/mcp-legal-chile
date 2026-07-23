@@ -106,9 +106,7 @@ export function normaIndiceMarkdown(norma: NormaTexto): string {
     `- **Artículos detectados:** ${norma.articulos.length}`,
     "",
     "## Índice de artículos",
-    ...norma.articulos.map(
-      (a) => `- art. **${a.numero}** — ${a.url}`,
-    ),
+    ...norma.articulos.map((a) => `- art. **${a.numero}** — ${a.url}`),
     "",
     sample.length
       ? `→ Texto oficial: \`citar_texto_legal\` con id_norma \`${norma.idNorma}\` y articulo (ej. \`${sample[0]}\`).`

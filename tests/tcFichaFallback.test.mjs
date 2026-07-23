@@ -73,7 +73,9 @@ test("citarJurisprudencia cae a la ficha (evidence=metadata) sin considerando", 
     assert.match(quote.texto, /inconstitucionalidad/i);
     assert.match(quote.markdown, /`metadata`/);
     assert.ok(
-      quote.warnings.some((w) => /no indexada en el buscador de texto/i.test(w)),
+      quote.warnings.some((w) =>
+        /no indexada en el buscador de texto/i.test(w),
+      ),
     );
   } finally {
     globalThis.fetch = original;

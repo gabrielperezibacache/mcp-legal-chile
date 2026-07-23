@@ -159,8 +159,7 @@ function buildTitleFilterSparql(
           .join("\n  ")
       : `FILTER(${terms
           .map(
-            (t) =>
-              `CONTAINS(LCASE(STR(?title)), "${escapeSparqlString(t)}")`,
+            (t) => `CONTAINS(LCASE(STR(?title)), "${escapeSparqlString(t)}")`,
           )
           .join(" || ")})`;
 
@@ -189,8 +188,7 @@ export function parseLeyChileBuscadorHtml(
 ): CitationResult[] {
   const results: CitationResult[] = [];
   const seen = new Set<string>();
-  const re =
-    /href=["']([^"']*idNorma=(\d+)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const re = /href=["']([^"']*idNorma=(\d+)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(html)) && results.length < limit) {
     const code = match[2]!;
@@ -492,7 +490,9 @@ LIMIT 10
   };
 }
 
-export async function estadoNorma(idNorma: string): Promise<Record<string, unknown>> {
+export async function estadoNorma(
+  idNorma: string,
+): Promise<Record<string, unknown>> {
   const code = idNorma.replace(/\D/g, "");
   const meta = await getNorma({ leychileCode: code });
   const result = meta.results[0];

@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorizeRequest, authEnabled, quotaSnapshot } from "./auth.js";
 import { HOT_IDS_FOR_WARMUP } from "./catalog.js";
+import { logger, newRequestId } from "./logger.js";
 import { metrics } from "./metrics.js";
 import { createServer, VERSION } from "./server.js";
 import { parseNormaTexto } from "./sources/normaTexto.js";
@@ -144,21 +145,37 @@ async function handleMcp(
   res: express.Response,
 ): Promise<void> {
   metrics.markRequest();
+  const requestId = newRequestId();
+  const startedAt = Date.now();
+  res.setHeader("X-Request-Id", requestId);
 
-  const method =
-    typeof req.body?.method === "string" ? req.body.method : "";
+  const method = typeof req.body?.method === "string" ? req.body.method : "";
+  const toolName =
+    method === "tools/call" && typeof req.body?.params?.name === "string"
+      ? req.body.params.name
+      : undefined;
   const expensive =
-    method === "tools/call" &&
-    typeof req.body?.params?.name === "string" &&
+    toolName != null &&
     /obtener_texto_norma|obtener_articulo|obtener_inciso|investigar_tema/.test(
-      req.body.params.name,
+      toolName,
     );
+
+  logger.info("mcp_request_start", {
+    requestId,
+    method,
+    tool: toolName,
+    ip: req.ip,
+  });
 
   const auth = await authorizeRequest(
     req.header("authorization") ?? undefined,
     expensive ? "expensive" : "cheap",
   );
   if (!auth.ok) {
+    logger.warn("mcp_request_unauthorized", {
+      requestId,
+      status: auth.status,
+    });
     res.status(auth.status).json({
       jsonrpc: "2.0",
       error: { code: -32000, message: auth.message },
@@ -178,9 +195,19 @@ async function handleMcp(
     res.on("close", () => {
       void transport.close();
       void server.close();
+      logger.info("mcp_request_end", {
+        requestId,
+        tool: toolName,
+        durationMs: Date.now() - startedAt,
+        status: res.statusCode,
+      });
     });
   } catch (error) {
-    console.error("Error MCP:", error);
+    logger.error("mcp_request_error", {
+      requestId,
+      tool: toolName,
+      error: error instanceof Error ? error.message : String(error),
+    });
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",
@@ -218,7 +245,6 @@ app.use((_req, res) => {
 // Final error handler: replaces Express's default HTML error page (which, in
 // dev-style environments, echoes the raw error message/stack) with a plain
 // JSON-RPC-shaped response that never leaks internals like file paths.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 app.use(
   (
     err: unknown,
@@ -248,27 +274,31 @@ app.use(
 async function warmupHotNormas(): Promise<void> {
   if (process.env.WARMUP_ON_BOOT === "0") return;
   const ids = HOT_IDS_FOR_WARMUP.slice(0, 4);
-  console.error(`[warmup] prefetching ${ids.join(", ")}`);
+  logger.info("warmup_start", { ids });
   for (const id of ids) {
     try {
       await parseNormaTexto(id);
-      console.error(`[warmup] ok ${id}`);
+      logger.info("warmup_ok", { id });
     } catch (error) {
-      console.error(
-        `[warmup] fail ${id}:`,
-        error instanceof Error ? error.message : error,
-      );
+      logger.warn("warmup_fail", {
+        id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 }
 
 const httpServer = app.listen(PORT, HOST, (error?: Error) => {
   if (error) {
-    console.error("No se pudo iniciar el servidor:", error);
+    logger.error("server_start_failed", { error: error.message });
     process.exit(1);
   }
-  console.error(`MCP Legal Chile v${VERSION} en http://${HOST}:${PORT}`);
-  console.error(`Endpoint MCP: http://${HOST}:${PORT}/mcp`);
+  logger.info("server_started", {
+    version: VERSION,
+    host: HOST,
+    port: PORT,
+    mcpEndpoint: `http://${HOST}:${PORT}/mcp`,
+  });
   void warmupHotNormas();
 });
 
@@ -276,27 +306,33 @@ const httpServer = app.listen(PORT, HOST, (error?: Error) => {
 // open indefinitely. Node defaults (0 = unlimited) are unsafe for a public
 // endpoint; keep generous headroom above SEARCH_TOOL_TIMEOUT_MS/PACK_TOTAL_MS
 // so legitimate long tool calls still complete.
-httpServer.requestTimeout = Number(process.env.HTTP_REQUEST_TIMEOUT_MS ?? 60_000);
-httpServer.headersTimeout = Number(process.env.HTTP_HEADERS_TIMEOUT_MS ?? 65_000);
-httpServer.keepAliveTimeout = Number(process.env.HTTP_KEEPALIVE_TIMEOUT_MS ?? 61_000);
+httpServer.requestTimeout = Number(
+  process.env.HTTP_REQUEST_TIMEOUT_MS ?? 60_000,
+);
+httpServer.headersTimeout = Number(
+  process.env.HTTP_HEADERS_TIMEOUT_MS ?? 65_000,
+);
+httpServer.keepAliveTimeout = Number(
+  process.env.HTTP_KEEPALIVE_TIMEOUT_MS ?? 61_000,
+);
 
 /** Graceful shutdown: stop accepting new connections, let in-flight requests finish. */
 let shuttingDown = false;
 function shutdown(signal: string): void {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.error(`[shutdown] ${signal} recibido, cerrando servidor...`);
+  logger.info("shutdown_start", { signal });
   const forceExitTimer = setTimeout(() => {
-    console.error("[shutdown] timeout, forzando salida");
+    logger.error("shutdown_timeout_force_exit");
     process.exit(1);
   }, 10_000);
   forceExitTimer.unref();
   httpServer.close((err) => {
     if (err) {
-      console.error("[shutdown] error al cerrar:", err);
+      logger.error("shutdown_error", { error: err.message });
       process.exit(1);
     }
-    console.error("[shutdown] servidor cerrado limpiamente");
+    logger.info("shutdown_clean");
     process.exit(0);
   });
 }
@@ -308,8 +344,13 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 // one unexpected upstream/parsing error crash the whole server (Render would
 // then cycle restarts, dropping every in-flight request each time).
 process.on("uncaughtException", (error) => {
-  console.error("[fatal] uncaughtException:", error);
+  logger.error("uncaught_exception", {
+    error: error.message,
+    stack: error.stack,
+  });
 });
 process.on("unhandledRejection", (reason) => {
-  console.error("[fatal] unhandledRejection:", reason);
+  logger.error("unhandled_rejection", {
+    reason: reason instanceof Error ? reason.message : String(reason),
+  });
 });

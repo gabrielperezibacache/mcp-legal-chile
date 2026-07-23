@@ -15,9 +15,7 @@ import {
   searchJurisprudencia,
   searchTribunalConstitucional,
 } from "./jurisprudencia.js";
-import {
-  searchLegislacion,
-} from "./legislacion.js";
+import { searchLegislacion } from "./legislacion.js";
 export {
   estadoNorma,
   getNorma,

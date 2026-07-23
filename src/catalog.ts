@@ -43,7 +43,11 @@ export const HOT_NORMAS: Array<{
     label: "Ley N° 19.496 sobre Protección de los Derechos de los Consumidores",
   },
   {
-    aliases: ["codigo de procedimiento civil", "código de procedimiento civil", "cpc"],
+    aliases: [
+      "codigo de procedimiento civil",
+      "código de procedimiento civil",
+      "cpc",
+    ],
     idNorma: "22740",
     label: "Código de Procedimiento Civil",
   },
@@ -54,18 +58,13 @@ export const HOT_NORMAS: Array<{
   },
 ];
 
-export function resolveHotNorma(query: string): (typeof HOT_NORMAS)[number] | undefined {
-  const q = query
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .trim();
+export function resolveHotNorma(
+  query: string,
+): (typeof HOT_NORMAS)[number] | undefined {
+  const q = query.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").trim();
   return HOT_NORMAS.find((n) =>
     n.aliases.some((a) => {
-      const alias = a
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/\p{M}/gu, "");
+      const alias = a.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
       return q === alias || q.includes(alias) || alias.includes(q);
     }),
   );

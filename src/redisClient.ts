@@ -1,10 +1,6 @@
 export type SharedRedisClient = {
   get: (key: string) => Promise<string | null>;
-  set: (
-    key: string,
-    value: string,
-    opts: { EX: number },
-  ) => Promise<unknown>;
+  set: (key: string, value: string, opts: { EX: number }) => Promise<unknown>;
   incrBy: (key: string, amount: number) => Promise<number>;
   expire: (key: string, seconds: number) => Promise<unknown>;
   connect: () => Promise<unknown>;

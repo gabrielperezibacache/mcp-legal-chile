@@ -213,7 +213,8 @@ export const LATAM_REFERENCE_JOURNALS: LegalJournal[] = [
     issns: ["0326-2774", "2524-9525"],
     collection: "arg",
     publisher: "PUC Argentina",
-    homepage: "https://www.scielo.org.ar/scielo.php?script=sci_serial&pid=2524-9525",
+    homepage:
+      "https://www.scielo.org.ar/scielo.php?script=sci_serial&pid=2524-9525",
   },
   {
     name: "Revista de Historia del Derecho",
@@ -222,7 +223,8 @@ export const LATAM_REFERENCE_JOURNALS: LegalJournal[] = [
     collection: "arg",
     scielo: "rhd",
     publisher: "Instituto de Investigaciones de Historia del Derecho",
-    homepage: "https://www.scielo.org.ar/scielo.php?script=sci_serial&pid=1853-1784",
+    homepage:
+      "https://www.scielo.org.ar/scielo.php?script=sci_serial&pid=1853-1784",
   },
   // México
   {
@@ -231,7 +233,8 @@ export const LATAM_REFERENCE_JOURNALS: LegalJournal[] = [
     issns: ["0041-8633", "2448-4873"],
     collection: "mex",
     publisher: "UNAM",
-    homepage: "https://www.scielo.org.mx/scielo.php?script=sci_serial&pid=0041-8633",
+    homepage:
+      "https://www.scielo.org.mx/scielo.php?script=sci_serial&pid=0041-8633",
   },
   {
     name: "Cuestiones Constitucionales. Revista Mexicana de Derecho Constitucional",
@@ -239,7 +242,8 @@ export const LATAM_REFERENCE_JOURNALS: LegalJournal[] = [
     issns: ["1405-9193", "2448-4881"],
     collection: "mex",
     publisher: "UNAM",
-    homepage: "https://revistas.juridicas.unam.mx/index.php/cuestiones-constitucionales",
+    homepage:
+      "https://revistas.juridicas.unam.mx/index.php/cuestiones-constitucionales",
   },
   {
     name: "Problema. Anuario de Filosofía y Teoría del Derecho",
@@ -309,7 +313,8 @@ export function inferCollectionFromDoi(doi: string): string | undefined {
   const norm = doi.replace(/^https?:\/\/doi\.org\//i, "").toLowerCase();
   if (norm.startsWith("10.4067/")) return "chl";
   if (norm.startsWith("10.1590/")) return "scl";
-  if (norm.startsWith("10.17135/") || norm.startsWith("10.46553/")) return "arg";
+  if (norm.startsWith("10.17135/") || norm.startsWith("10.46553/"))
+    return "arg";
   if (norm.startsWith("10.22201/")) return "mex";
   if (norm.startsWith("10.18800/")) return "per";
   return undefined;

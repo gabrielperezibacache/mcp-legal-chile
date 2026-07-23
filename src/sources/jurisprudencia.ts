@@ -14,10 +14,7 @@ import {
   TRIBUNAL_PORTALS,
   tribunalSearchSites,
 } from "./tribunalesCatalog.js";
-import {
-  parseConsiderandos,
-  rankConsiderandos,
-} from "./considerandos.js";
+import { parseConsiderandos, rankConsiderandos } from "./considerandos.js";
 import {
   excerptForQuote,
   getTcFicha,
@@ -37,17 +34,21 @@ const PJUD_NO_API_HINT =
   "PJUD no tiene API abierta; se entregan solo enlaces candidatos para verificación manual.";
 
 function friendlyWebSearchWarning(raw: string, site?: string): string {
-  if (/Circuito abierto|HTTP 429|fetch failed|aborted|timeout|ECONN|ENOTFOUND/i.test(raw)) {
-    return site
-      ? `${WEB_LIMITED_HINT} (${site})`
-      : WEB_LIMITED_HINT;
+  if (
+    /Circuito abierto|HTTP 429|fetch failed|aborted|timeout|ECONN|ENOTFOUND/i.test(
+      raw,
+    )
+  ) {
+    return site ? `${WEB_LIMITED_HINT} (${site})` : WEB_LIMITED_HINT;
   }
   return site ? `Búsqueda libre en ${site} limitada: ${raw}` : raw;
 }
 
 function friendlyPjudResolverWarning(error: unknown): string {
   const msg = error instanceof Error ? error.message : String(error);
-  if (/fetch failed|aborted|Circuito abierto|HTTP 429|timeout|ECONN/i.test(msg)) {
+  if (
+    /fetch failed|aborted|Circuito abierto|HTTP 429|timeout|ECONN/i.test(msg)
+  ) {
     return PJUD_NO_API_HINT;
   }
   return `PJUD búsqueda: ${msg}`;
@@ -122,7 +123,8 @@ function isOfficialHost(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase();
     return OFFICIAL_HOST_FRAGMENTS.some(
-      (frag) => host === frag || host.endsWith(`.${frag}`) || host.includes(frag),
+      (frag) =>
+        host === frag || host.endsWith(`.${frag}`) || host.includes(frag),
     );
   } catch {
     return OFFICIAL_HOST_FRAGMENTS.some((frag) => url.includes(frag));
@@ -188,10 +190,7 @@ function yearVariants(anio?: string): string[] {
   return out;
 }
 
-function matchesYearFilter(
-  hit: CitationResult,
-  anio?: string,
-): boolean {
+function matchesYearFilter(hit: CitationResult, anio?: string): boolean {
   if (!anio) return true;
   const variants = yearVariants(anio);
   const hay = `${hit.title} ${hit.summary ?? ""} ${hit.rol ?? ""} ${hit.date ?? ""} ${hit.metadata?.anio ?? ""}`;
@@ -266,7 +265,10 @@ export function buildJurisCitation(opts: {
       url: opts.url,
     }).citation;
   }
-  const short = (opts.titleFallback ?? "").replace(/\s+/g, " ").trim().slice(0, 140);
+  const short = (opts.titleFallback ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 140);
   return short
     ? `Candidato (verificar): ${short}`
     : "Candidato (verificar): sin identificadores parseados";
@@ -283,13 +285,17 @@ function enrich(hits: CitationResult[]): CitationResult[] {
     const rol = hit.rol ?? ids.rol;
     const tribunal = hit.tribunal ?? ids.tribunal;
     const anio =
-      (hit.metadata?.anio as string | undefined) ?? ids.anio ?? (rol ? anioFromRol(rol) : undefined);
+      (hit.metadata?.anio as string | undefined) ??
+      ids.anio ??
+      (rol ? anioFromRol(rol) : undefined);
     const tipo =
       (hit.metadata?.tipo as string | undefined) ??
       ids.tipo ??
       (hit.metadata?.provider === "tc_buscador" ? "Sentencia" : undefined);
     const citation =
-      hit.metadata?.provider === "tc_buscador" && hit.citation && !/Candidato/i.test(hit.citation)
+      hit.metadata?.provider === "tc_buscador" &&
+      hit.citation &&
+      !/Candidato/i.test(hit.citation)
         ? hit.citation
         : buildJurisCitation({
             tribunal,
@@ -382,7 +388,10 @@ function tcHitToCitation(hit: TcSearchHit, query?: string): CitationResult {
   };
 }
 
-function isTcContext(tribunal?: string, norm?: ReturnType<typeof normalizeRol>): boolean {
+function isTcContext(
+  tribunal?: string,
+  norm?: ReturnType<typeof normalizeRol>,
+): boolean {
   const portal = matchTribunalPortal(tribunal ?? "");
   if (portal?.id === "tc") return true;
   return norm?.likelyTc ?? false;
@@ -465,7 +474,8 @@ export async function resolverRol(opts: {
 }): Promise<ResolveRolResult> {
   const norm = normalizeRol(opts.rol);
   const explicitTc = isTcContext(opts.tribunal, norm);
-  const tribunal = opts.tribunal ?? (explicitTc ? "Tribunal Constitucional" : undefined);
+  const tribunal =
+    opts.tribunal ?? (explicitTc ? "Tribunal Constitucional" : undefined);
   const anio = opts.anio ?? norm.anio;
   const warnings: string[] = [
     "PJUD no tiene API abierta: los enlaces pjud.cl son candidatos a verificar.",
@@ -478,9 +488,14 @@ export async function resolverRol(opts: {
   if (shouldSearchTc) {
     try {
       for (const term of norm.searchTerms) {
-        const hits = await searchTcSentencias(term, opts.limite ?? 3, opts.signal, {
-          anio,
-        });
+        const hits = await searchTcSentencias(
+          term,
+          opts.limite ?? 3,
+          opts.signal,
+          {
+            anio,
+          },
+        );
         const exact = exactTcHits(hits, norm);
         results.push(
           ...(exact.length || !explicitTc ? exact : hits).map((h) =>
@@ -498,11 +513,11 @@ export async function resolverRol(opts: {
 
   if (shouldSearchPjud) {
     const portal = matchTribunalPortal(tribunal ?? "");
-    const sites =
-      portal && portal.id !== "tc" ? portal.sites : ["pjud.cl"];
+    const sites = portal && portal.id !== "tc" ? portal.sites : ["pjud.cl"];
     try {
       // See buildWebQuery: avoid parenthesized OR-groups, Yahoo mis-parses them.
-      const q = `rol ${norm.display} ${tribunal ?? ""} sentencia OR fallo OR causa OR jurisprudencia`.trim();
+      const q =
+        `rol ${norm.display} ${tribunal ?? ""} sentencia OR fallo OR causa OR jurisprudencia`.trim();
       for (const site of sites) {
         const hits = await searchWeb(q, {
           site,
@@ -514,8 +529,14 @@ export async function resolverRol(opts: {
         );
         // Prefer hits that mention the same ROL number.
         const ranked = (filtered.length ? filtered : hits).sort((a, b) => {
-          const aHit = rolMatches(a.title, norm) || rolMatches(a.snippet ?? "", norm) ? 1 : 0;
-          const bHit = rolMatches(b.title, norm) || rolMatches(b.snippet ?? "", norm) ? 1 : 0;
+          const aHit =
+            rolMatches(a.title, norm) || rolMatches(a.snippet ?? "", norm)
+              ? 1
+              : 0;
+          const bHit =
+            rolMatches(b.title, norm) || rolMatches(b.snippet ?? "", norm)
+              ? 1
+              : 0;
           if (aHit !== bHit) return bHit - aHit;
           return (
             scoreCourtHit(b.title, b.url, b.snippet) -
@@ -569,7 +590,8 @@ export async function obtenerFalloTc(
   let hit: TcSearchHit | undefined;
   for (const term of norm.searchTerms) {
     const hits = await searchTcSentencias(term, 8, signal, { anio: norm.anio });
-    hit = exactTcHits(hits, norm)[0] ?? hits.find((h) => rolMatches(h.rol, norm));
+    hit =
+      exactTcHits(hits, norm)[0] ?? hits.find((h) => rolMatches(h.rol, norm));
     if (hit) break;
   }
 
@@ -611,10 +633,7 @@ export async function obtenerFalloTc(
     .slice(0, 8)
     .map((line) => `> ${line}`)
     .join("\n");
-  const anio =
-    ficha?.fecha?.slice(0, 4) ||
-    norm.anio ||
-    undefined;
+  const anio = ficha?.fecha?.slice(0, 4) || norm.anio || undefined;
   const tipoResolucion = ficha?.tipoResolucion ?? "Sentencia";
   const rolDisplay = norm.display;
   const url = ficha?.fichaUrl ?? hit?.fichaUrl ?? "";
@@ -644,8 +663,12 @@ export async function obtenerFalloTc(
     ficha?.fecha ? `- **Fecha:** ${ficha.fecha}` : undefined,
     ficha?.resultado ? `- **Resultado:** ${ficha.resultado}` : undefined,
     ficha?.gestion ? `- **Gestión:** ${ficha.gestion}` : undefined,
-    ficha?.articulosCpr ? `- **Artículos CPR:** ${ficha.articulosCpr}` : undefined,
-    ficha?.votosMayoria ? `- **Votos mayoría:** ${ficha.votosMayoria}` : undefined,
+    ficha?.articulosCpr
+      ? `- **Artículos CPR:** ${ficha.articulosCpr}`
+      : undefined,
+    ficha?.votosMayoria
+      ? `- **Votos mayoría:** ${ficha.votosMayoria}`
+      : undefined,
     considerandos.length
       ? `- **Considerandos detectados:** ${considerandos.length}`
       : undefined,
@@ -655,7 +678,9 @@ export async function obtenerFalloTc(
     `- **Ficha:** ${url}`,
     pdfUrl ? `- **PDF oficial:** ${pdfUrl}` : undefined,
     "",
-    fichaOnly ? "**Doctrina (resumen oficial TC):**" : "**Extracto / doctrina (TC):**",
+    fichaOnly
+      ? "**Doctrina (resumen oficial TC):**"
+      : "**Extracto / doctrina (TC):**",
     "",
     blockquote || "_Sin extracto disponible; consulta el PDF oficial._",
     "",
@@ -792,8 +817,7 @@ export async function searchJurisprudencia(
 
   const portal = matchTribunalPortal(opts.tribunal ?? "");
   const skipTc = Boolean(opts.site) || (portal != null && portal.id !== "tc");
-  const wantWeb =
-    !portal || portal.id !== "tc" || Boolean(opts.site);
+  const wantWeb = !portal || portal.id !== "tc" || Boolean(opts.site);
 
   // 1) TC API first — real metadata, no web scrape. When both TC and PJUD are
   // in scope (generic query, no tribunal filter), cap how many TC hits we take
@@ -843,7 +867,8 @@ export async function searchJurisprudencia(
             publisher:
               site === "pjud.cl"
                 ? "Poder Judicial de Chile"
-                : site.includes("tcchile") || site.includes("tribunalconstitucional")
+                : site.includes("tcchile") ||
+                    site.includes("tribunalconstitucional")
                   ? "Tribunal Constitucional"
                   : site,
             share: 1 / tribunalSearchSites().length,
@@ -973,10 +998,9 @@ export async function searchTribunalConstitucional(
     return {
       query,
       source: "jurisprudencia",
-      results: rankJurisprudenciaResults(results, query, { anio: opts.anio }).slice(
-        0,
-        limit,
-      ),
+      results: rankJurisprudenciaResults(results, query, {
+        anio: opts.anio,
+      }).slice(0, limit),
       warnings,
       searchUrls,
     };
@@ -1021,7 +1045,9 @@ export async function searchTribunalConstitucional(
     return {
       query,
       source: "jurisprudencia",
-      results: portalLinkResults(query).filter((r) => r.url.includes("tcchile")),
+      results: portalLinkResults(query).filter((r) =>
+        r.url.includes("tcchile"),
+      ),
       warnings: [
         ...warnings,
         "Fallback web libre sin resultados. Abre el buscador oficial TC.",

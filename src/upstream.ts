@@ -1,13 +1,7 @@
 import { metrics } from "./metrics.js";
 
 export type HostKey =
-  | "leychile"
-  | "bcn"
-  | "tc"
-  | "openalex"
-  | "crossref"
-  | "scielo"
-  | "websearch";
+  "leychile" | "bcn" | "tc" | "openalex" | "crossref" | "scielo" | "websearch";
 
 interface CircuitState {
   failures: number;
@@ -97,7 +91,8 @@ function releaseSlot(key: HostKey): void {
 /** Stagger request starts without serializing the whole network operation. */
 async function scheduleStart(key: HostKey): Promise<void> {
   const scheduled = startQueues[key].then(
-    () => new Promise<void>((resolve) => setTimeout(resolve, MIN_INTERVAL_MS[key])),
+    () =>
+      new Promise<void>((resolve) => setTimeout(resolve, MIN_INTERVAL_MS[key])),
   );
   startQueues[key] = scheduled.then(
     () => undefined,

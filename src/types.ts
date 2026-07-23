@@ -1,8 +1,5 @@
 export type LegalSourceKind =
-  | "legislacion"
-  | "jurisprudencia"
-  | "doctrina"
-  | "dictamenes";
+  "legislacion" | "jurisprudencia" | "doctrina" | "dictamenes";
 
 export type EvidenceKind = "full_text" | "metadata" | "link_only";
 

@@ -55,7 +55,9 @@ export interface NormaTexto {
 
 export class LeyChileXmlError extends Error {
   constructor(idNorma: string, detail: string) {
-    super(`LeyChile XML inválido/no disponible para idNorma=${idNorma}: ${detail}`);
+    super(
+      `LeyChile XML inválido/no disponible para idNorma=${idNorma}: ${detail}`,
+    );
     this.name = "LeyChileXmlError";
   }
 }
@@ -162,7 +164,7 @@ function parseIncisosAndLiterales(texto: string): {
 } {
   const literales: Array<{ letra: string; texto: string }> = [];
   const litRe =
-    /(?:^|[;\.\s])([a-z]|[a-z]\))[\).\-–—]\s*([^;]+?)(?=(?:[;\.]\s*[a-z][\).\-–—])|$)/gi;
+    /(?:^|[;.\s])([a-z]|[a-z]\))[).\-–—]\s*([^;]+?)(?=(?:[;.]\s*[a-z][).\-–—])|$)/gi;
   let m: RegExpExecArray | null;
   while ((m = litRe.exec(texto)) !== null) {
     const letra = m[1].replace(")", "");
@@ -255,7 +257,10 @@ export async function fetchNormaXml(
         opts.signal,
       );
       if (!xml.includes("<Norma") && !xml.includes("normaId")) {
-        throw new LeyChileXmlError(code, "la respuesta no contiene un nodo Norma");
+        throw new LeyChileXmlError(
+          code,
+          "la respuesta no contiene un nodo Norma",
+        );
       }
       xml429Until.delete(code);
       return xml;
@@ -266,7 +271,7 @@ export async function fetchNormaXml(
       ) {
         const wait =
           error instanceof HttpStatusError
-            ? error.retryAfterMs ?? XML_429_CACHE_MS
+            ? (error.retryAfterMs ?? XML_429_CACHE_MS)
             : error.retryAfterMs;
         xml429Until.set(code, Date.now() + wait);
         throw new LeyChileRateLimitError(code, wait);
@@ -295,22 +300,25 @@ export async function parseNormaTexto(
     });
     const doc = parser.parse(stripNamespaces(xml)) as Record<string, unknown>;
     const norma = (doc.Norma ?? doc) as Record<string, unknown>;
-    const identificador = (norma.Identificador ?? {}) as Record<string, unknown>;
+    const identificador = (norma.Identificador ?? {}) as Record<
+      string,
+      unknown
+    >;
     const metadatos = (norma.Metadatos ?? {}) as Record<string, unknown>;
     const tipoNumero = asArray(
       ((identificador.TiposNumeros as Record<string, unknown> | undefined)
         ?.TipoNumero ?? undefined) as
-        | Record<string, unknown>
-        | Record<string, unknown>[]
-        | undefined,
+        Record<string, unknown> | Record<string, unknown>[] | undefined,
     )[0] as Record<string, unknown> | undefined;
 
-    const structures = asArray(norma.EstructurasFuncionales).flatMap((block) => {
-      const b = block as Record<string, unknown>;
-      return asArray(b.EstructuraFuncional).map((child) =>
-        parsePart(child as Record<string, unknown>),
-      );
-    });
+    const structures = asArray(norma.EstructurasFuncionales).flatMap(
+      (block) => {
+        const b = block as Record<string, unknown>;
+        return asArray(b.EstructuraFuncional).map((child) =>
+          parsePart(child as Record<string, unknown>),
+        );
+      },
+    );
 
     const articulos = flattenArticles(structures, code);
     if (structures.length === 0) {
@@ -409,9 +417,7 @@ export function findIncisoOrLiteral(
 ): { kind: "inciso" | "literal" | "articulo"; texto: string; label: string } {
   if (opts.letra) {
     const needle = opts.letra.replace(/[^a-z]/gi, "").toLowerCase();
-    const lit = art.literales.find(
-      (l) => l.letra.toLowerCase() === needle,
-    );
+    const lit = art.literales.find((l) => l.letra.toLowerCase() === needle);
     if (lit) {
       return { kind: "literal", texto: lit.texto, label: `lit. ${lit.letra})` };
     }
@@ -481,7 +487,9 @@ export function normaToPlainText(
       : undefined,
     norma.fechaVersion ? `Versión: ${norma.fechaVersion}` : undefined,
     norma.derogado ? `Estado: ${norma.derogado}` : undefined,
-    norma.materias.length ? `Materias: ${norma.materias.join("; ")}` : undefined,
+    norma.materias.length
+      ? `Materias: ${norma.materias.join("; ")}`
+      : undefined,
     "",
     "## Artículos",
     "",

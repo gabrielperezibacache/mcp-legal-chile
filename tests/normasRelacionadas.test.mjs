@@ -67,7 +67,10 @@ test("normasRelacionadas usa predicados directos y etiqueta la relación", async
 test("normasRelacionadas informa cuando BCN no tiene relaciones estructuradas", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => {
-    const body = sparqlResult(["rel", "norma", "title", "number", "date", "code"], []);
+    const body = sparqlResult(
+      ["rel", "norma", "title", "number", "date", "code"],
+      [],
+    );
     return new Response(JSON.stringify(body), {
       status: 200,
       headers: { "Content-Type": "application/sparql-results+json" },
@@ -78,7 +81,9 @@ test("normasRelacionadas informa cuando BCN no tiene relaciones estructuradas", 
     const res = await normasRelacionadas("555001-test-unique");
     assert.equal(res.results.length, 0);
     assert.ok(
-      res.warnings?.some((w) => /no registra relaciones estructuradas/i.test(w)),
+      res.warnings?.some((w) =>
+        /no registra relaciones estructuradas/i.test(w),
+      ),
       `warnings: ${JSON.stringify(res.warnings)}`,
     );
   } finally {
@@ -96,7 +101,9 @@ test("normasRelacionadas degrada con warning si SPARQL falla", async () => {
     const res = await normasRelacionadas("555002-test-unique");
     assert.equal(res.results.length, 0);
     assert.ok(
-      res.warnings?.some((w) => /No se pudieron obtener relaciones SPARQL/i.test(w)),
+      res.warnings?.some((w) =>
+        /No se pudieron obtener relaciones SPARQL/i.test(w),
+      ),
       `warnings: ${JSON.stringify(res.warnings)}`,
     );
   } finally {

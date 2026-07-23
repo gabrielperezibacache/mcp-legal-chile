@@ -35,7 +35,8 @@ export function formatCitationMarkdown(result: CitationResult): string {
   if (ids.length) lines.push(`- **Identificadores:** ${ids.join(" · ")}`);
   if (result.publisher) lines.push(`- **Publicado por:** ${result.publisher}`);
   lines.push(`- **URL:** ${result.url}`);
-  if (result.secondaryUrl) lines.push(`- **PDF / secundaria:** ${result.secondaryUrl}`);
+  if (result.secondaryUrl)
+    lines.push(`- **PDF / secundaria:** ${result.secondaryUrl}`);
 
   if (result.summary?.trim()) {
     const extractTitle =
@@ -101,10 +102,7 @@ export function formatSearchMarkdown(response: SearchResponse): string {
       }
     }
     if (stubs.length) {
-      lines.push(
-        "### Portales sugeridos (no son documentos encontrados)",
-        "",
-      );
+      lines.push("### Portales sugeridos (no son documentos encontrados)", "");
       for (const [i, result] of stubs.entries()) {
         lines.push(
           `${i + 1}. **${result.title}** — ${result.url}`,

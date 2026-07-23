@@ -15,8 +15,7 @@ test("searchJurisprudencia con upstream caído entrega portal stubs + warning", 
     assert.ok(
       res.results.every(
         (r) =>
-          r.metadata?.integrity === "portal_stub" ||
-          r.evidence === "link_only",
+          r.metadata?.integrity === "portal_stub" || r.evidence === "link_only",
       ),
     );
     assert.ok(

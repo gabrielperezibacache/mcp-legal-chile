@@ -14,12 +14,18 @@ test("normalizeTcSearchQuery quita stopwords que vacían el AND del TC", () => {
 
 test("normalizeTcSearchQuery conserva tokens útiles", () => {
   assert.equal(normalizeTcSearchQuery("habeas corpus"), "habeas corpus");
-  assert.equal(normalizeTcSearchQuery("  despido injustificado  "), "despido injustificado");
+  assert.equal(
+    normalizeTcSearchQuery("  despido injustificado  "),
+    "despido injustificado",
+  );
 });
 
 test("isAbortLikeError detecta abort/timeout", () => {
   assert.equal(isAbortLikeError(new DeadlineError("x", 1)), true);
-  assert.equal(isAbortLikeError(new DOMException("Aborted", "AbortError")), true);
+  assert.equal(
+    isAbortLikeError(new DOMException("Aborted", "AbortError")),
+    true,
+  );
   assert.equal(isAbortLikeError(new Error("The operation was aborted")), true);
   assert.equal(isAbortLikeError(new Error("HTTP 500")), false);
 });

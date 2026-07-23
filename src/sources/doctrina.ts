@@ -104,7 +104,10 @@ function reconstructAbstract(
     .slice(0, 900);
 }
 
-function pagesOf(biblio?: OpenAlexWork["biblio"], page?: string): string | undefined {
+function pagesOf(
+  biblio?: OpenAlexWork["biblio"],
+  page?: string,
+): string | undefined {
   if (page) return page;
   if (!biblio?.first_page) return undefined;
   return biblio.last_page
@@ -220,10 +223,7 @@ function catalogJournalNames(country?: LatamCountry): Set<string> {
       : LATAM_REFERENCE_JOURNALS.filter((j) => j.country === country);
   return new Set(
     journals.map((j) =>
-      j.name
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/\p{M}/gu, ""),
+      j.name.toLowerCase().normalize("NFD").replace(/\p{M}/gu, ""),
     ),
   );
 }
@@ -252,7 +252,13 @@ async function fetchCrossrefAbstract(
       signal,
     );
     const abs = data.message.abstract;
-    return abs ? abs.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 900) : undefined;
+    return abs
+      ? abs
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 900)
+      : undefined;
   } catch {
     return undefined;
   }
@@ -443,11 +449,7 @@ export async function searchDoctrina(
     merged = dedupeDoctrineRecords(merged);
   }
 
-  const ranked = rankDoctrineRecords(
-    merged,
-    query,
-    catalogJournalNames("CL"),
-  );
+  const ranked = rankDoctrineRecords(merged, query, catalogJournalNames("CL"));
   const results = uniqueByUrl(ranked.map(toCitationResult)).slice(0, limit);
 
   return {
@@ -584,7 +586,9 @@ export function formatDoctrineSearchMarkdown(
     if (r.metadata?.citationApa) {
       lines.push(`**APA:** ${String(r.metadata.citationApa)}`, "");
     }
-    lines.push(`- **Integridad:** \`candidate\` — ${integrityLabel(integrityOf(r))}`);
+    lines.push(
+      `- **Integridad:** \`candidate\` — ${integrityLabel(integrityOf(r))}`,
+    );
     if (r.metadata?.authors) {
       lines.push(`- **Autores:** ${String(r.metadata.authors)}`);
     }
@@ -604,7 +608,12 @@ export function formatDoctrineSearchMarkdown(
     if (r.secondaryUrl) lines.push(`- **PDF:** ${r.secondaryUrl}`);
     lines.push("");
     if (r.summary) {
-      lines.push("**Abstract (no vinculante):**", "", toBlockquote(r.summary, 6), "");
+      lines.push(
+        "**Abstract (no vinculante):**",
+        "",
+        toBlockquote(r.summary, 6),
+        "",
+      );
     }
   }
 
@@ -713,9 +722,12 @@ export function doctrineToMarkdown(d: DoctrineRecord): string {
     d.pdfUrl ? `- **PDF:** ${d.pdfUrl}` : undefined,
     "",
     d.abstract
-      ? ["**Abstract (no vinculante):**", "", toBlockquote(d.abstract, 8), ""].join(
-          "\n",
-        )
+      ? [
+          "**Abstract (no vinculante):**",
+          "",
+          toBlockquote(d.abstract, 8),
+          "",
+        ].join("\n")
       : "_Sin abstract disponible en la fuente._",
     "",
     "_Doctrina no vinculante. Contrastar siempre con el texto oficial de LeyChile._",

@@ -6,9 +6,21 @@ import {
   withUpstreamLimit,
 } from "./upstream.js";
 
+import pkg from "../package.json" with { type: "json" };
+
 export const USER_AGENT =
   process.env.USER_AGENT ??
-  "MCP-Legal-Chile/1.11 (conector MCP libre; https://mcp-legal-chile.onrender.com)";
+  `MCP-Legal-Chile/${pkg.version} (conector MCP libre; https://mcp-legal-chile.onrender.com)`;
+
+/** Browser-like UA for scraping engines that reject bot signatures. */
+export const WEB_SEARCH_USER_AGENT =
+  process.env.WEB_SEARCH_USER_AGENT ??
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+/** Polite bot UA for services that accept structured bot identifiers. */
+export const BOT_USER_AGENT =
+  process.env.WEB_SEARCH_USER_AGENT ??
+  `Mozilla/5.0 (compatible; MCP-Legal-Chile/${pkg.version}; +https://mcp-legal-chile.onrender.com)`;
 
 /** Contact for OpenAlex/Crossref polite pools (higher rate limits). */
 export function contactEmail(): string {
@@ -193,9 +205,7 @@ export async function fetchTextWithRetry(
   if (status === 429) {
     noteTerminalUpstreamFailure(url, status);
   }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(String(lastError));
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 export function escapeSparqlString(value: string): string {

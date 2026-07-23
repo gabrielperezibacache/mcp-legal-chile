@@ -12,6 +12,8 @@ export interface CacheStore {
   set(key: string, value: string, ttlSec: number): Promise<void>;
 }
 
+const MAX_MEMORY_ENTRIES = Number(process.env.CACHE_MAX_ENTRIES ?? 2000);
+
 class MemoryStore implements CacheStore {
   private map = new Map<string, { value: string; expiresAt: number }>();
 
@@ -26,6 +28,11 @@ class MemoryStore implements CacheStore {
   }
 
   async set(key: string, value: string, ttlSec: number): Promise<void> {
+    // LRU eviction: if at capacity, drop the oldest entry (first in Map insertion order).
+    if (this.map.size >= MAX_MEMORY_ENTRIES && !this.map.has(key)) {
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) this.map.delete(oldest);
+    }
     this.map.set(key, {
       value,
       expiresAt: Date.now() + ttlSec * 1000,
@@ -35,16 +42,12 @@ class MemoryStore implements CacheStore {
 
 type RedisClient = {
   get: (key: string) => Promise<string | null>;
-  set: (
-    key: string,
-    value: string,
-    opts: { EX: number },
-  ) => Promise<unknown>;
+  set: (key: string, value: string, opts: { EX: number }) => Promise<unknown>;
 };
 
 let redisClientPromise: Promise<RedisClient | null> | null = null;
 
-async function getRedisClient(url: string): Promise<RedisClient | null> {
+async function getRedisClient(): Promise<RedisClient | null> {
   if (!redisClientPromise) {
     redisClientPromise = getSharedRedis() as Promise<RedisClient | null>;
   }
@@ -52,10 +55,8 @@ async function getRedisClient(url: string): Promise<RedisClient | null> {
 }
 
 class RedisStore implements CacheStore {
-  constructor(private url: string) {}
-
   async get(key: string): Promise<string | null> {
-    const client = await getRedisClient(this.url);
+    const client = await getRedisClient();
     if (!client) return null;
     try {
       return await client.get(key);
@@ -65,7 +66,7 @@ class RedisStore implements CacheStore {
   }
 
   async set(key: string, value: string, ttlSec: number): Promise<void> {
-    const client = await getRedisClient(this.url);
+    const client = await getRedisClient();
     if (!client) return;
     try {
       await client.set(key, value, { EX: Math.max(1, ttlSec) });
@@ -86,7 +87,7 @@ export class TtlCache {
     private staleTtlMs = defaultTtlMs * 3,
   ) {
     const redisUrl = process.env.REDIS_URL?.trim();
-    this.store = redisUrl ? new RedisStore(redisUrl) : new MemoryStore();
+    this.store = redisUrl ? new RedisStore() : new MemoryStore();
   }
 
   get<T>(key: string): T | undefined {
@@ -116,6 +117,11 @@ export class TtlCache {
       expiresAt: Date.now() + ttlMs,
       staleUntil: Date.now() + Math.max(ttlMs, this.staleTtlMs),
     };
+    // LRU eviction on the local in-memory tier.
+    if (this.local.size >= MAX_MEMORY_ENTRIES && !this.local.has(key)) {
+      const oldest = this.local.keys().next().value;
+      if (oldest !== undefined) this.local.delete(oldest);
+    }
     this.local.set(key, entry as CacheEntry<unknown>);
     void this.store.set(
       key,
@@ -189,5 +195,8 @@ export class TtlCache {
 
 /** TTLs aligned to the performance plan. */
 export const sparqlCache = new TtlCache(12 * 60 * 60_000, 36 * 60 * 60_000);
-export const xmlCache = new TtlCache(7 * 24 * 60 * 60_000, 14 * 24 * 60 * 60_000);
+export const xmlCache = new TtlCache(
+  7 * 24 * 60 * 60_000,
+  14 * 24 * 60 * 60_000,
+);
 export const webCache = new TtlCache(60 * 60_000, 3 * 60 * 60_000);

@@ -1,6 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { DeadlineError, remainingMs, runWithDeadline } from "../dist/deadline.js";
+import {
+  DeadlineError,
+  remainingMs,
+  runWithDeadline,
+} from "../dist/deadline.js";
 
 test("runWithDeadline aborta trabajo lento", async () => {
   await assert.rejects(

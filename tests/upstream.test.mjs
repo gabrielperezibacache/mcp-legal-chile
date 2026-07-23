@@ -1,13 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  upstreamHostKey,
-  withUpstreamLimit,
-} from "../dist/upstream.js";
+import { upstreamHostKey, withUpstreamLimit } from "../dist/upstream.js";
 
 test("upstreamHostKey clasifica TC", () => {
   assert.equal(
-    upstreamHostKey("https://buscador-backend.tcchile.cl/api/extended/sentencias"),
+    upstreamHostKey(
+      "https://buscador-backend.tcchile.cl/api/extended/sentencias",
+    ),
     "tc",
   );
 });

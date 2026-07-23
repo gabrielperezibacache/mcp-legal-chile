@@ -31,7 +31,9 @@ test("parseRetryAfterMs ignora header vacío o pasado", () => {
 
 test("isRetryableFetchError cubre 429 y fetch failed", () => {
   assert.equal(
-    isRetryableFetchError(new HttpStatusError(429, "https://example.test", 2000)),
+    isRetryableFetchError(
+      new HttpStatusError(429, "https://example.test", 2000),
+    ),
     true,
   );
   assert.equal(isRetryableFetchError(new Error("fetch failed")), true);

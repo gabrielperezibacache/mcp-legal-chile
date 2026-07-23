@@ -71,9 +71,7 @@ function doiOf(bib: DoajBibjson): string | undefined {
 
 function urlsOf(bib: DoajBibjson): { url: string; pdfUrl?: string } {
   const links = bib.link ?? [];
-  const fulltext = links.find((l) =>
-    /fulltext|full.?text/i.test(l.type ?? ""),
-  );
+  const fulltext = links.find((l) => /fulltext|full.?text/i.test(l.type ?? ""));
   const pdf = links.find(
     (l) =>
       /pdf/i.test(l.type ?? "") ||
@@ -176,8 +174,10 @@ export async function searchDoajDoctrine(
       return r.country.toUpperCase() === countryCode;
     });
   // If country filter wiped everything, keep unfiltered OA hits (still free/useful).
-  const chosen = mapped.length ? mapped : (data.results ?? [])
-    .map(mapDoajHit)
-    .filter((r): r is DoctrineRecord => r !== null);
+  const chosen = mapped.length
+    ? mapped
+    : (data.results ?? [])
+        .map(mapDoajHit)
+        .filter((r): r is DoctrineRecord => r !== null);
   return chosen.slice(0, limit);
 }

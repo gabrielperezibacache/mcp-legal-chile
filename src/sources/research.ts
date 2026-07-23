@@ -1,8 +1,5 @@
 import { resolveHotNorma } from "../catalog.js";
-import {
-  remainingMs,
-  runWithDeadline,
-} from "../deadline.js";
+import { remainingMs, runWithDeadline } from "../deadline.js";
 import {
   assistantIntegrityBlock,
   integrityOf,
@@ -20,10 +17,7 @@ import {
   type ResolveRolResult,
 } from "./jurisprudencia.js";
 import { searchLegislacion } from "./legislacion.js";
-import {
-  findArticulo,
-  parseNormaTexto,
-} from "./normaTexto.js";
+import { findArticulo, parseNormaTexto } from "./normaTexto.js";
 
 function extractArticuloMention(query: string): string | undefined {
   const m = query.match(/art[ií]culo\s*([0-9]+(?:\s*bis)?)/i);
@@ -67,8 +61,7 @@ export async function investigarTema(
   const startedAt = Date.now();
   const totalMs = Number(process.env.PACK_TOTAL_MS ?? 18_000);
   const perSourceMs = Number(
-    process.env.PACK_TIMEOUT_MS ??
-      Math.min(11_000, Math.floor(totalMs * 0.65)),
+    process.env.PACK_TIMEOUT_MS ?? Math.min(11_000, Math.floor(totalMs * 0.65)),
   );
   const maxChars = Number(process.env.PACK_MAX_CHARS ?? 10_000);
   const articleQuoteChars = Number(process.env.PACK_ARTICLE_CHARS ?? 1_200);
@@ -83,15 +76,13 @@ export async function investigarTema(
       runWithDeadline(
         "legislacion",
         perSourceMs,
-        (signal) =>
-          searchLegislacion(consulta, limitePorFuente, { signal }),
+        (signal) => searchLegislacion(consulta, limitePorFuente, { signal }),
         packController.signal,
       ),
       runWithDeadline(
         "jurisprudencia",
         perSourceMs,
-        (signal) =>
-          searchJurisprudencia(consulta, limitePorFuente, { signal }),
+        (signal) => searchJurisprudencia(consulta, limitePorFuente, { signal }),
         packController.signal,
       ),
       runWithDeadline(
@@ -107,8 +98,7 @@ export async function investigarTema(
       runWithDeadline(
         "dictamenes",
         perSourceMs,
-        (signal) =>
-          searchDictamenes(consulta, limitePorFuente, { signal }),
+        (signal) => searchDictamenes(consulta, limitePorFuente, { signal }),
         packController.signal,
       ),
       rolMention
@@ -148,10 +138,7 @@ export async function investigarTema(
       } catch {
         pending.push("obtener_fallo_tc");
       }
-    } else if (
-      rolMention &&
-      shouldFetchTcFallo(consulta, rolResolved)
-    ) {
+    } else if (rolMention && shouldFetchTcFallo(consulta, rolResolved)) {
       pending.push("obtener_fallo_tc (presupuesto agotado)");
     }
 
@@ -355,9 +342,7 @@ export async function investigarTema(
       }
       if (sealed.warnings?.length) {
         sections.push(
-          ...sealed.warnings
-            .slice(0, 3)
-            .map((w) => `  - _Advertencia:_ ${w}`),
+          ...sealed.warnings.slice(0, 3).map((w) => `  - _Advertencia:_ ${w}`),
         );
       }
     };

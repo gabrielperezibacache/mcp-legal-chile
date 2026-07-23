@@ -8,6 +8,8 @@ import {
   isRetryableFetchError,
   stripHtml,
   uniqueByUrl,
+  WEB_SEARCH_USER_AGENT,
+  BOT_USER_AGENT,
 } from "../util.js";
 
 export interface WebHit {
@@ -16,7 +18,9 @@ export interface WebHit {
   snippet?: string;
 }
 
-const WEB_SEARCH_TIMEOUT_MS = Number(process.env.WEB_SEARCH_TIMEOUT_MS ?? 5_000);
+const WEB_SEARCH_TIMEOUT_MS = Number(
+  process.env.WEB_SEARCH_TIMEOUT_MS ?? 5_000,
+);
 /** Short TTL so a DDG block does not burn every tool deadline for minutes. */
 const WEB_FAIL_CACHE_MS = Number(process.env.WEB_FAIL_CACHE_MS ?? 180_000);
 
@@ -113,9 +117,7 @@ async function fetchYahooHtml(
       headers: {
         Accept: "text/html,application/xhtml+xml",
         "Accept-Language": "es-CL,es;q=0.9,en;q=0.8",
-        "User-Agent":
-          process.env.WEB_SEARCH_USER_AGENT ??
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent": WEB_SEARCH_USER_AGENT,
       },
     },
     WEB_SEARCH_TIMEOUT_MS,
@@ -145,8 +147,7 @@ async function searchYahoo(
 
 function extractLiteHits(html: string): WebHit[] {
   const hits: WebHit[] = [];
-  const re =
-    /<a[^>]*rel="nofollow"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+  const re = /<a[^>]*rel="nofollow"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
   let match: RegExpExecArray | null;
   const seen = new Set<string>();
   while ((match = re.exec(html)) !== null) {
@@ -179,9 +180,7 @@ async function searchDuckDuckGoHtml(
       headers: {
         Accept: "text/html",
         "Accept-Language": "es-CL,es;q=0.9",
-        "User-Agent":
-          process.env.WEB_SEARCH_USER_AGENT ??
-          "Mozilla/5.0 (compatible; MCP-Legal-Chile/1.9; +https://mcp-legal-chile.onrender.com)",
+        "User-Agent": BOT_USER_AGENT,
       },
     },
     WEB_SEARCH_TIMEOUT_MS,
@@ -202,9 +201,7 @@ async function searchDuckDuckGoLite(
       headers: {
         Accept: "text/html",
         "Accept-Language": "es-CL,es;q=0.9",
-        "User-Agent":
-          process.env.WEB_SEARCH_USER_AGENT ??
-          "Mozilla/5.0 (compatible; MCP-Legal-Chile/1.9; +https://mcp-legal-chile.onrender.com)",
+        "User-Agent": BOT_USER_AGENT,
       },
     },
     WEB_SEARCH_TIMEOUT_MS,

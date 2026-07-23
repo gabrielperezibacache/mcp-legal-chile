@@ -33,7 +33,11 @@ function percentile(sorted: number[], p: number): number | null {
   return sorted[idx];
 }
 
-function summarize(name: string): { p50: number | null; p95: number | null; n: number } {
+function summarize(name: string): {
+  p50: number | null;
+  p95: number | null;
+  n: number;
+} {
   const samples = [...(state.latenciesMs[name] ?? [])].sort((a, b) => a - b);
   return {
     n: samples.length,

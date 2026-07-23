@@ -26,9 +26,7 @@ test("sealSearchResponse marca portal_stub y advierte si solo hay stubs", () => 
   });
   assert.equal(sealed.results.length, 1);
   assert.equal(integrityOf(sealed.results[0]), "portal_stub");
-  assert.ok(
-    sealed.warnings?.some((w) => /portal_stub|portales/i.test(w)),
-  );
+  assert.ok(sealed.warnings?.some((w) => /portal_stub|portales/i.test(w)));
 });
 
 test("sealSearchResponse descarta resultados sin URL", () => {
@@ -81,7 +79,10 @@ test("formatSearchMarkdown incluye bloque de integridad y no inventar", () => {
   assert.match(md, /Qué puedes hacer ahora/);
   assert.match(md, /Prohibido inventar/);
   for (const rule of ANTI_HALLUCINATION_RULES) {
-    assert.match(md, new RegExp(rule.slice(0, 24).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(
+      md,
+      new RegExp(rule.slice(0, 24).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    );
   }
 });
 

@@ -51,7 +51,10 @@ export function nextStepFor(result: CitationResult): string | undefined {
     return `Siguiente: \`citar_texto_legal\` / \`obtener_articulo\` con idNorma \`${result.id}\`.`;
   }
   if (result.source === "jurisprudencia") {
-    if (result.tribunal === "Tribunal Constitucional" || /tcchile/i.test(result.url)) {
+    if (
+      result.tribunal === "Tribunal Constitucional" ||
+      /tcchile/i.test(result.url)
+    ) {
       return result.rol
         ? `Siguiente: \`obtener_fallo_tc\` o \`citar_jurisprudencia\` con rol \`${result.rol}\`.`
         : "Siguiente: `obtener_fallo_tc` / `citar_jurisprudencia` con el ROL de la ficha.";
@@ -85,29 +88,35 @@ export function nextStepsForSearch(opts: {
   const steps: string[] = [];
   if (opts.realCount > 0) {
     if (opts.source === "legislacion" || opts.source === "todas") {
-      steps.push("Texto oficial: `citar_texto_legal` o `obtener_articulo` con el idNorma listado.");
+      steps.push(
+        "Texto oficial: `citar_texto_legal` o `obtener_articulo` con el idNorma listado.",
+      );
     }
     if (opts.source === "jurisprudencia" || opts.source === "todas") {
-      steps.push("TC con extracto: `obtener_fallo_tc` / `citar_jurisprudencia`. PJUD: pegar texto del fallo.");
+      steps.push(
+        "TC con extracto: `obtener_fallo_tc` / `citar_jurisprudencia`. PJUD: pegar texto del fallo.",
+      );
     }
     if (opts.source === "doctrina") {
-      steps.push("Doctrina no vinculante: cita el DOI/URL listado; norma aplicable vía LeyChile.");
+      steps.push(
+        "Doctrina no vinculante: cita el DOI/URL listado; norma aplicable vía LeyChile.",
+      );
     }
     if (opts.source === "dictamenes") {
-      steps.push("Confirma el dictamen en el portal CGR; no afirmes el contenido desde el título.");
+      steps.push(
+        "Confirma el dictamen en el portal CGR; no afirmes el contenido desde el título.",
+      );
     }
   }
   if (opts.stubCount > 0) {
-    steps.push("Los `portal_stub` solo indican dónde buscar; no son documentos recuperados.");
+    steps.push(
+      "Los `portal_stub` solo indican dónde buscar; no son documentos recuperados.",
+    );
   }
   return steps;
 }
 
 /** Ready-to-paste citation callout. */
 export function citationReadyBlock(citation: string): string {
-  return [
-    "**Cita lista para pegar:**",
-    "",
-    `> ${citation}`,
-  ].join("\n");
+  return ["**Cita lista para pegar:**", "", `> ${citation}`].join("\n");
 }
