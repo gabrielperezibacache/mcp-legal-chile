@@ -86,6 +86,41 @@ test("rankJurisprudenciaResults ordena por relevancia de consulta", () => {
   );
 });
 
+test("scoreJurisprudenciaHit no da bonus de tribunal por substring parcial", () => {
+  const hit = {
+    source: "jurisprudencia",
+    title: "Resumen de una causa civil",
+    citation: "Candidato (verificar): Resumen de una causa civil",
+    url: "https://example.com/causa",
+    publisher: "Un portal cualquiera sobre causas",
+    evidence: "link_only",
+  };
+  // "ca" (Corte de Apelaciones) no debe matchear porque "causas" lo contiene
+  // como substring, no como palabra completa.
+  const withCaFilter = scoreJurisprudenciaHit(hit, "causa civil", {
+    tribunal: "ca",
+  });
+  const withoutFilter = scoreJurisprudenciaHit(hit, "causa civil", {});
+  assert.equal(withCaFilter, withoutFilter);
+});
+
+test("scoreJurisprudenciaHit sí da bonus cuando el tribunal matchea como palabra completa", () => {
+  const hit = {
+    source: "jurisprudencia",
+    title: "Sentencia Corte de Apelaciones",
+    citation: "Corte de Apelaciones, rol 1-2024",
+    url: "https://www.pjud.cl/x",
+    publisher: "Corte de Apelaciones",
+    tribunal: "Corte de Apelaciones",
+    evidence: "link_only",
+  };
+  const withMatch = scoreJurisprudenciaHit(hit, "recurso", {
+    tribunal: "Corte de Apelaciones",
+  });
+  const withoutFilter = scoreJurisprudenciaHit(hit, "recurso", {});
+  assert.ok(withMatch > withoutFilter);
+});
+
 test("webHitsToCitations no usa el título crudo como cita jurídica", () => {
   const [hit] = webHitsToCitations(
     [

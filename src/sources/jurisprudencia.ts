@@ -15,6 +15,7 @@ import {
   tribunalSearchSites,
 } from "./tribunalesCatalog.js";
 import { parseConsiderandos, rankConsiderandos } from "./considerandos.js";
+import { containsWholeAlias } from "../textMatch.js";
 import {
   excerptForQuote,
   getTcFicha,
@@ -224,7 +225,15 @@ export function scoreJurisprudenciaHit(
   if (opts.tribunal) {
     const wanted = foldTribunalText(opts.tribunal);
     const got = foldTribunalText(hit.tribunal ?? hit.publisher ?? "");
-    if (got && (got.includes(wanted) || wanted.includes(got))) score += 18;
+    // Whole-word containment: avoids short tribunal filters like "ca"
+    // spuriously boosting hits whose publisher/tribunal text merely
+    // contains those letters mid-word (e.g. "causa").
+    if (
+      got &&
+      (containsWholeAlias(got, wanted) || containsWholeAlias(wanted, got))
+    ) {
+      score += 18;
+    }
   }
 
   if (opts.anio && matchesYearFilter(hit, opts.anio)) score += 12;
