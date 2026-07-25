@@ -37,3 +37,16 @@ test("tribunalSearchSites usa sitios del portal", () => {
   const sites = tribunalSearchSites("TDLC");
   assert.ok(sites.includes("tdlc.cl"));
 });
+
+test("matchTribunalPortal no confunde alias cortos con substrings de otras palabras", () => {
+  // "cuidado" y "adjudicación" no deben matchear alias como "dt" o "ca".
+  assert.equal(matchTribunalPortal("cuidado personal"), undefined);
+  assert.equal(matchTribunalPortal("adjudicación de bienes"), undefined);
+  assert.equal(matchTribunalPortal("desarrollo económico"), undefined);
+});
+
+test("matchTribunalPortal sigue resolviendo alias cortos como palabra completa", () => {
+  assert.equal(matchTribunalPortal("top")?.id, "oral_penal");
+  assert.equal(matchTribunalPortal("tta")?.id, "tta");
+  assert.equal(matchTribunalPortal("laboral")?.id, "laboral");
+});

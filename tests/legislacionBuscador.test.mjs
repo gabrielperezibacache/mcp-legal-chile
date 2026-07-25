@@ -26,3 +26,18 @@ test("catálogo hot resuelve despido injustificado → Código del Trabajo", () 
   assert.ok(hot);
   assert.equal(hot.idNorma, "207436");
 });
+
+test("catálogo hot no confunde alias cortos con substrings de otras palabras", () => {
+  // "protección" contiene las letras "cc" (alias de Código Civil) pero no
+  // debe matchear: el alias sólo debe activarse como palabra completa.
+  assert.equal(resolveHotNorma("protección de datos personales"), undefined);
+  assert.equal(resolveHotNorma("circular sobre construcción"), undefined);
+  assert.equal(resolveHotNorma("arriendo de inmuebles urbanos"), undefined);
+});
+
+test("catálogo hot sigue resolviendo alias cortos como palabra completa", () => {
+  assert.equal(resolveHotNorma("cc")?.idNorma, "172986");
+  assert.equal(resolveHotNorma("recurso cc")?.idNorma, "172986");
+  assert.equal(resolveHotNorma("ct")?.idNorma, "207436");
+  assert.equal(resolveHotNorma("texto del cpc")?.idNorma, "22740");
+});

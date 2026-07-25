@@ -1,3 +1,5 @@
+import { foldForMatch, containsWholeAlias } from "./textMatch.js";
+
 /** Canonical idNorma shortcuts for frequent Chilean statutes. */
 export const HOT_NORMAS: Array<{
   aliases: string[];
@@ -61,11 +63,15 @@ export const HOT_NORMAS: Array<{
 export function resolveHotNorma(
   query: string,
 ): (typeof HOT_NORMAS)[number] | undefined {
-  const q = query.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").trim();
+  const q = foldForMatch(query);
   return HOT_NORMAS.find((n) =>
     n.aliases.some((a) => {
-      const alias = a.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
-      return q === alias || q.includes(alias) || alias.includes(q);
+      const alias = foldForMatch(a);
+      if (q === alias) return true;
+      // Whole-word containment only (never a raw substring test): avoids
+      // short abbreviations like "cc"/"ct" matching mid-word inside
+      // unrelated terms (e.g. "protección" contains the letters "cc").
+      return containsWholeAlias(q, alias) || containsWholeAlias(alias, q);
     }),
   );
 }

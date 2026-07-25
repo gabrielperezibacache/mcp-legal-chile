@@ -454,11 +454,14 @@ function buildWebQuery(
   query: string,
   opts: { anio?: string; tribunal?: string },
 ): string {
-  // NOTE: Yahoo's SERP parser is brittle with parenthesized OR-groups — it
-  // frequently (but not always) mis-parses `(a OR b)` and reports a false
-  // "no results" even when the same terms without parentheses return hits.
-  // Keep the OR clause flat (no parens) to avoid that failure mode.
-  const parts = [query, "sentencia OR fallo OR causa OR jurisprudencia"];
+  // NOTE: Yahoo's SERP silently drops the `site:` filter (and errors out far
+  // more often with HTTP 500) once the query contains an `OR` boolean clause
+  // — even unparenthesized. Empirically, `<query> sentencia site:pjud.cl`
+  // reliably returns real ruling pages (pjud.cl/.../getRulingNew/…), while
+  // adding `OR fallo OR causa OR jurisprudencia` returns generic news sites
+  // and ignores the site scope entirely. Keep this suffix to a single plain
+  // term — never add an OR clause here.
+  const parts = [query, "sentencia"];
   if (opts.anio) parts.push(opts.anio);
   if (opts.tribunal) parts.push(`"${opts.tribunal}"`);
   return parts.join(" ");
@@ -515,9 +518,9 @@ export async function resolverRol(opts: {
     const portal = matchTribunalPortal(tribunal ?? "");
     const sites = portal && portal.id !== "tc" ? portal.sites : ["pjud.cl"];
     try {
-      // See buildWebQuery: avoid parenthesized OR-groups, Yahoo mis-parses them.
-      const q =
-        `rol ${norm.display} ${tribunal ?? ""} sentencia OR fallo OR causa OR jurisprudencia`.trim();
+      // See buildWebQuery: Yahoo drops `site:` scoping entirely once an OR
+      // clause is present, so keep this to plain terms only.
+      const q = `rol ${norm.display} ${tribunal ?? ""} sentencia`.trim();
       for (const site of sites) {
         const hits = await searchWeb(q, {
           site,

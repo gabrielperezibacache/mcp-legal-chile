@@ -1,3 +1,5 @@
+import { foldForMatch, containsWholeAlias } from "../textMatch.js";
+
 /** Portales oficiales de jurisprudencia y búsqueda por tribunal. */
 export interface TribunalPortal {
   id: string;
@@ -29,7 +31,7 @@ export const TRIBUNAL_PORTALS: TribunalPortal[] = [
   {
     id: "ca",
     name: "Corte de Apelaciones",
-    aliases: ["corte de apelaciones", "ca ", "apelaciones"],
+    aliases: ["corte de apelaciones", "ca", "apelaciones"],
     sites: ["pjud.cl"],
     searchUrl: () => "https://www.pjud.cl/portal-unificado-sentencias",
   },
@@ -174,13 +176,17 @@ export function matchTribunalPortal(
   tribunal?: string,
 ): TribunalPortal | undefined {
   if (!tribunal) return undefined;
-  const t = foldTribunalText(tribunal);
+  const t = foldForMatch(tribunal);
   return TRIBUNAL_PORTALS.find((p) => {
-    const name = foldTribunalText(p.name);
+    const name = foldForMatch(p.name);
     if (name === t) return true;
     return p.aliases.some((a) => {
-      const alias = foldTribunalText(a);
-      return Boolean(alias) && (t.includes(alias) || alias.includes(t));
+      const alias = foldForMatch(a);
+      if (!alias) return false;
+      // Whole-word containment only (never a raw substring test): avoids
+      // short abbreviations like "ca"/"dt"/"top" matching mid-word inside
+      // unrelated terms.
+      return containsWholeAlias(t, alias) || containsWholeAlias(alias, t);
     });
   });
 }
