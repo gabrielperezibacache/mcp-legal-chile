@@ -212,6 +212,19 @@ export function escapeSparqlString(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+/** Named entities beyond the XML-ish core five: common in Spanish-language
+ * HTML (accented vowels, ñ, ü, «», etc.) scraped from Yahoo/DuckDuckGo/PJUD. */
+const NAMED_ENTITIES: Record<string, string> = {
+  aacute: "á", eacute: "é", iacute: "í", oacute: "ó", uacute: "ú",
+  Aacute: "Á", Eacute: "É", Iacute: "Í", Oacute: "Ó", Uacute: "Ú",
+  ntilde: "ñ", Ntilde: "Ñ", uuml: "ü", Uuml: "Ü",
+  iexcl: "¡", iquest: "¿", laquo: "«", raquo: "»",
+  ordf: "ª", ordm: "º", deg: "°", middot: "·",
+  nbsp: " ", ndash: "–", mdash: "—",
+  lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201c", rdquo: "\u201d",
+  hellip: "…", copy: "©", reg: "®", trade: "™",
+};
+
 export function decodeHtmlEntities(text: string): string {
   return text
     .replace(/&amp;/g, "&")
@@ -220,8 +233,15 @@ export function decodeHtmlEntities(text: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&#x27;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) =>
+      String.fromCharCode(Number.parseInt(n, 16)),
+    )
     .replace(/&#(\d+);/g, (_, n: string) =>
       String.fromCharCode(Number.parseInt(n, 10)),
+    )
+    .replace(
+      /&([a-zA-Z]+);/g,
+      (full, name: string) => NAMED_ENTITIES[name] ?? full,
     );
 }
 

@@ -25,6 +25,11 @@ export interface NormaPart {
   tipo: string;
   idParte?: string;
   titulo?: string;
+  /** Raw <NombreParte> metadata, e.g. "58 bis" or "12 (DEL ART. 2)". Used as
+   * a fallback article-number source when the body text uses the abbreviated
+   * "Art. N.-" form instead of the full "Artículo N.-" that
+   * normalizeArticleNumber expects. */
+  nombreParte?: string;
   texto: string;
   derogado?: string;
   children: NormaPart[];
@@ -104,7 +109,7 @@ function textOf(node: unknown): string {
   return "";
 }
 
-function decodeEntities(text: string): string {
+function decodeEntitiesOnly(text: string): string {
   return text
     .replace(/&#(\d+);/g, (_, n: string) =>
       String.fromCharCode(Number.parseInt(n, 10)),
@@ -117,17 +122,68 @@ function decodeEntities(text: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s+/g, " ")
+    .replace(/&nbsp;/g, " ");
+}
+
+/**
+ * LeyChile XML <Texto> is fixed-width plain text: each real paragraph
+ * (inciso) starts on its own line indented ~5 spaces, while wrapped
+ * continuation lines of the same paragraph start at column 0. Marginal
+ * annotations (amendment history like "LEY N° 19.611 Art. único") are
+ * interleaved to the right of the main column and get pulled onto their
+ * own 0-indent lines too, so this signal is noisy but still the only
+ * reliable paragraph-boundary marker LeyChile gives us. We insert a
+ * paragraph-break marker (\n\n) before each ~5-space-indented line *before*
+ * collapsing whitespace, so parseIncisosAndLiterales's fallback split can
+ * still find inciso boundaries after normalization. Without this, collapsing
+ * "\s+" to a single space first (as before) destroyed every paragraph break,
+ * silently leaving `obtener_inciso` unable to find any inciso beyond
+ * explicitly-labelled "Inciso segundo.-" headings (rare in practice).
+ */
+function markParagraphBreaks(text: string): string {
+  return text.replace(/\n {4,7}(?=\S)/g, "\n\n     ");
+}
+
+/** Exported for unit testing; also used internally by parsePart. */
+export function decodeEntities(text: string): string {
+  const marked = decodeEntitiesOnly(markParagraphBreaks(text));
+  // Join wrapped continuation lines back into their paragraph (single \n →
+  // space) while keeping genuine paragraph breaks (the \n\n inserted above,
+  // or any blank line already present in the source) intact.
+  return marked
+    .replace(/\n{2,}/g, "\x00PARA\x00")
+    .replace(/\s*\n\s*/g, " ")
+    .replace(/\x00PARA\x00/g, "\n\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n\n */g, "\n\n")
     .trim();
 }
 
-function normalizeArticleNumber(texto: string): string | undefined {
+/** Exported for unit testing; also used internally by flattenArticles. */
+export function normalizeArticleNumber(texto: string): string | undefined {
+  // Anchor to the very start of the (already-trimmed) article body so that
+  // in-body cross references ("... prevenido en el artículo 124 ...") are
+  // never mistaken for the article's own heading/number. Accepts both the
+  // full "Artículo" and the abbreviated "Art." forms LeyChile mixes freely.
   const match = texto.match(
-    /art[ií]culo\s*([0-9]+(?:\s*(?:bis|ter|quáter|quater|quinquies))?(?:º|°)?)/i,
+    /^art(?:[ií]culo|\.)\s*([0-9]+(?:\s*(?:bis|ter|qu[aá]ter|quinquies))?(?:º|°)?)/i,
   );
   if (!match) return undefined;
   return match[1].replace(/\s+/g, " ").replace(/[º°]/g, "").trim();
+}
+
+/** Extracts the leading numeric/bis-ter token from a <NombreParte> value
+ * like "58 bis" or "12 (DEL ART. 2)", stripping the "(DEL ART. N)" suffix
+ * that LeyChile appends when an article was inserted via a "Doble
+ * Articulado" (a law's own art. 2 introducing a new codified text). */
+export function normalizeFromNombreParte(
+  nombreParte: string,
+): string | undefined {
+  const match = nombreParte.match(
+    /^\s*([0-9]+(?:\s*(?:bis|ter|qu[aá]ter|quinquies))?)/i,
+  );
+  if (!match) return undefined;
+  return match[1].replace(/\s+/g, " ").trim();
 }
 
 function normalizeArticleKey(texto: string): string {
@@ -149,8 +205,13 @@ function parsePart(node: Record<string, unknown>): NormaPart {
   });
 
   return {
-    tipo: String(node["@_tipoParte"] ?? ""),
+    // tipoParte is an XML attribute, so entities like "Art&#237;culo" are
+    // never decoded by the parser's text-node handling — decode explicitly
+    // or flattenArticles's /art[ií]culo/i.test(part.tipo) silently never
+    // matches and every article is misclassified.
+    tipo: decodeEntitiesOnly(String(node["@_tipoParte"] ?? "")),
     idParte: node["@_idParte"] ? String(node["@_idParte"]) : undefined,
+    nombreParte: decodeEntities(textOf(meta.NombreParte)) || undefined,
     titulo: decodeEntities(textOf(meta.TituloParte)),
     texto: decodeEntities(textOf(node.Texto)),
     derogado: node["@_derogado"] ? String(node["@_derogado"]) : undefined,
@@ -158,7 +219,8 @@ function parsePart(node: Record<string, unknown>): NormaPart {
   };
 }
 
-function parseIncisosAndLiterales(texto: string): {
+/** Exported for unit testing; also used internally by flattenArticles. */
+export function parseIncisosAndLiterales(texto: string): {
   incisos: Array<{ label: string; texto: string }>;
   literales: Array<{ letra: string; texto: string }>;
 } {
@@ -173,15 +235,26 @@ function parseIncisosAndLiterales(texto: string): {
   }
 
   const incisos: Array<{ label: string; texto: string }> = [];
-  const parts = texto.split(/(?=\bInciso\s+[A-Za-z0-9º°]+)/i).filter(Boolean);
-  if (parts.length > 1) {
-    for (const part of parts) {
-      const labelMatch = part.match(/^Inciso\s+([A-Za-z0-9º°]+)/i);
+  // Only treat "Inciso X" as a structural heading when it starts a sentence
+  // (start-of-string, after ".-"/"." + whitespace, or a newline) and is
+  // immediately followed by ordinal/number punctuation like ".-" or ":".
+  // Plain in-body cross references ("... a que se refiere el inciso
+  // precedente", "... el inciso se elevará al doble ...") must NOT split,
+  // or every article mentioning a prior inciso gets shredded into bogus
+  // "incisos" like {label:"precedente"} or {label:"se"}.
+  const incisoHeadingRe =
+    /(?:^|[.\-–—]\s+|\n\s*)(Inciso\s+(?:[Pp]rimero|[Ss]egundo|[Tt]ercero|[Cc]uarto|[Qq]uinto|[Ss]exto|[Ss]éptimo|[Oo]ctavo|[Nn]oveno|[Dd]écimo|[Úú]nico|[Ff]inal|\d{1,3}\s*[°ºo]?)\s*[.\-–—:])/g;
+  const headingMatches = [...texto.matchAll(incisoHeadingRe)];
+  if (headingMatches.length > 1) {
+    for (let i = 0; i < headingMatches.length; i++) {
+      const start = headingMatches[i].index ?? 0;
+      const end = headingMatches[i + 1]?.index ?? texto.length;
+      const chunk = texto.slice(start, end).trim();
+      const labelMatch = chunk.match(
+        /^Inciso\s+([A-Za-zÁÉÍÓÚáéíóúñÑ0-9º°]+)/i,
+      );
       if (labelMatch) {
-        incisos.push({
-          label: labelMatch[1],
-          texto: part.trim(),
-        });
+        incisos.push({ label: labelMatch[1], texto: chunk });
       }
     }
   } else {
@@ -199,14 +272,28 @@ function parseIncisosAndLiterales(texto: string): {
   return { incisos, literales };
 }
 
-function flattenArticles(
+/** Exported for unit testing; also used internally by parseNormaTexto. */
+export function flattenArticles(
   parts: NormaPart[],
   idNorma: string,
   out: NormaTexto["articulos"] = [],
 ): NormaTexto["articulos"] {
   for (const part of parts) {
-    if (/art[ií]culo/i.test(part.tipo) || /^art[ií]culo/i.test(part.texto)) {
-      const numero = normalizeArticleNumber(part.texto) ?? part.titulo ?? "?";
+    if (
+      /^art[ií]culo$/i.test(part.tipo) ||
+      /^art[ií]culo\b/i.test(part.texto)
+    ) {
+      // Prefer parsing the number from the article body ("Artículo 58
+      // bis.-" / "Art. 2º."); fall back to the structured <NombreParte>
+      // metadata (e.g. "58 bis") for the rare cases where the body text
+      // doesn't start with a recognizable "Art[ículo]" prefix at all.
+      const numero =
+        normalizeArticleNumber(part.texto) ??
+        (part.nombreParte
+          ? normalizeFromNombreParte(part.nombreParte)
+          : undefined) ??
+        part.titulo ??
+        "?";
       const { incisos, literales } = parseIncisosAndLiterales(part.texto);
       out.push({
         numero,

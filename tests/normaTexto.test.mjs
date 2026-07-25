@@ -2,9 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   ArticleNotFoundError,
+  decodeEntities,
   findArticulo,
   findIncisoOrLiteral,
+  flattenArticles,
   FragmentNotFoundError,
+  normalizeArticleNumber,
+  normalizeFromNombreParte,
+  parseIncisosAndLiterales,
   requireArticulo,
   UnsupportedNormaStructureError,
 } from "../dist/sources/normaTexto.js";
@@ -88,4 +93,74 @@ test("findIncisoOrLiteral lanza si letra no existe", () => {
     () => findIncisoOrLiteral(sampleArt, { letra: "z" }),
     (error) => error instanceof FragmentNotFoundError,
   );
+});
+
+test("normalizeArticleNumber ancla al inicio del texto, ignora referencias cruzadas", () => {
+  assert.equal(
+    normalizeArticleNumber("Art. 127. El viudo... el articulo 124..."),
+    "127",
+  );
+  assert.equal(normalizeArticleNumber("Articulo 58 bis.- Nombre es..."), "58 bis");
+  assert.equal(normalizeArticleNumber("Art. 2 o. La costumbre..."), "2");
+  assert.equal(normalizeArticleNumber("Texto sin encabezado de articulo."), undefined);
+});
+
+test("normalizeFromNombreParte extrae numero y quita el sufijo DEL ART", () => {
+  assert.equal(normalizeFromNombreParte("12 (DEL ART. 2)"), "12");
+  assert.equal(normalizeFromNombreParte("58 bis"), "58 bis");
+  assert.equal(normalizeFromNombreParte("del Articulo 2"), undefined);
+});
+
+test("flattenArticles usa tipoParte decodificado (Art&#237;culo) para reconocer articulos", () => {
+  const parts = [
+    {
+      tipo: "Art\u00edculo",
+      idParte: "1",
+      texto: "Art. 44. La ley distingue tres especies de culpa.",
+      children: [],
+    },
+  ];
+  const out = flattenArticles(parts, "172986");
+  assert.equal(out.length, 1);
+  assert.equal(out[0].numero, "44");
+});
+
+test("flattenArticles usa nombreParte como respaldo cuando el texto no trae encabezado", () => {
+  const parts = [
+    {
+      tipo: "Articulo",
+      idParte: "9",
+      nombreParte: "58 bis",
+      texto: "Sin encabezado reconocible en el cuerpo.",
+      children: [],
+    },
+  ];
+  const out = flattenArticles(parts, "172986");
+  assert.equal(out.length, 1);
+  assert.equal(out[0].numero, "58 bis");
+});
+
+test("decodeEntities preserva saltos de parrafo indentados (LeyChile fixed-width)", () => {
+  const raw =
+    "     Art. 44. La ley distingue tres especies de culpa.\n\n     Culpa grave es aquella.\n\n     Culpa leve es otra.";
+  const decoded = decodeEntities(raw);
+  const paragraphs = decoded.split("\n\n");
+  assert.equal(paragraphs.length, 3);
+  assert.ok(paragraphs[0].includes("distingue tres especies"));
+  assert.ok(paragraphs[1].includes("Culpa grave"));
+  assert.ok(paragraphs[2].includes("Culpa leve"));
+});
+
+test("decodeEntities une lineas envueltas de un mismo parrafo", () => {
+  const raw = "     Art. 1698. Incumbe probar las\nobligaciones al que\nalega aquellas.";
+  const decoded = decodeEntities(raw);
+  assert.equal(decoded.includes("\n"), false);
+  assert.ok(decoded.includes("Incumbe probar las obligaciones al que alega aquellas."));
+});
+
+test("parseIncisosAndLiterales aprovecha los saltos de parrafo para detectar incisos implicitos", () => {
+  const texto =
+    "Art. 44. La ley distingue tres especies de culpa o descuido.\n\n     Culpa grave, negligencia grave, es la que consiste en no manejar los negocios ajenos con cuidado.\n\n     Culpa leve, descuido leve, es la falta de aquella diligencia y cuidado ordinario.";
+  const { incisos } = parseIncisosAndLiterales(texto);
+  assert.ok(incisos.length >= 2);
 });

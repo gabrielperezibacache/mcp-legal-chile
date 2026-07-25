@@ -11,8 +11,13 @@ export interface CaseIdentifiers {
 
 const ROL_RE =
   /\b(?:rol|rol\s*n[ºo°.]?)\s*[:.]?\s*([0-9]{1,6}\s*[-–./]\s*[0-9]{2,4})\b/i;
+// Unlike ROL_RE, this has no "rol" keyword to anchor on, so it is used as a
+// fallback for bare TC-style identifiers (e.g. "2514-INA"). The year segment
+// must therefore look like a real year — a plain [0-9]{2,4} range false-
+// positives on phone numbers, addresses, invoice numbers, etc. (e.g.
+// "(02) 873-5000" was previously mis-parsed as ROL 873-5000, año 5000).
 const TC_ROL_RE =
-  /\b([0-9]{3,5})\s*[-–]\s*([0-9]{2,4})(?:\s*[-–]\s*(INA|INC|CPT|CAA|CDS))?\b/i;
+  /\b([0-9]{3,5})\s*[-–]\s*((?:19|20)[0-9]{2}|[0-9]{2})(?:\s*[-–]\s*(INA|INC|CPT|CAA|CDS))?\b/i;
 
 export interface NormalizedRol {
   raw: string;
