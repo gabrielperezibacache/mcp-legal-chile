@@ -1,7 +1,16 @@
 import { metrics } from "./metrics.js";
 
 export type HostKey =
-  "leychile" | "bcn" | "tc" | "openalex" | "crossref" | "scielo" | "websearch";
+  | "leychile"
+  | "bcn"
+  | "tc"
+  | "openalex"
+  | "crossref"
+  | "scielo"
+  | "contraloria"
+  | "pjud"
+  | "diariooficial"
+  | "websearch";
 
 interface CircuitState {
   failures: number;
@@ -20,6 +29,9 @@ const circuits: Record<HostKey, CircuitState> = {
   openalex: makeCircuit(),
   crossref: makeCircuit(),
   scielo: makeCircuit(),
+  contraloria: makeCircuit(),
+  pjud: makeCircuit(),
+  diariooficial: makeCircuit(),
   websearch: makeCircuit(),
 };
 
@@ -30,6 +42,9 @@ const startQueues: Record<HostKey, Promise<unknown>> = {
   openalex: Promise.resolve(),
   crossref: Promise.resolve(),
   scielo: Promise.resolve(),
+  contraloria: Promise.resolve(),
+  pjud: Promise.resolve(),
+  diariooficial: Promise.resolve(),
   websearch: Promise.resolve(),
 };
 
@@ -40,6 +55,9 @@ const active: Record<HostKey, number> = {
   openalex: 0,
   crossref: 0,
   scielo: 0,
+  contraloria: 0,
+  pjud: 0,
+  diariooficial: 0,
   websearch: 0,
 };
 
@@ -50,6 +68,9 @@ const waiters: Record<HostKey, Array<() => void>> = {
   openalex: [],
   crossref: [],
   scielo: [],
+  contraloria: [],
+  pjud: [],
+  diariooficial: [],
   websearch: [],
 };
 
@@ -60,6 +81,12 @@ const MAX_CONCURRENT: Record<HostKey, number> = {
   openalex: Number(process.env.OPENALEX_MAX_CONCURRENT ?? 2),
   crossref: Number(process.env.CROSSREF_MAX_CONCURRENT ?? 2),
   scielo: Number(process.env.SCIELO_MAX_CONCURRENT ?? 2),
+  // Contraloria/PJUD/Diario Oficial have no official API — scraped best-effort,
+  // so they get their own (conservative) buckets instead of sharing the
+  // generic `websearch` circuit with DuckDuckGo/Yahoo scraping.
+  contraloria: Number(process.env.CONTRALORIA_MAX_CONCURRENT ?? 2),
+  pjud: Number(process.env.PJUD_MAX_CONCURRENT ?? 1),
+  diariooficial: Number(process.env.DIARIO_OFICIAL_MAX_CONCURRENT ?? 2),
   websearch: Number(process.env.WEBSEARCH_MAX_CONCURRENT ?? 3),
 };
 
@@ -70,6 +97,9 @@ const MIN_INTERVAL_MS: Record<HostKey, number> = {
   openalex: Number(process.env.OPENALEX_MIN_INTERVAL_MS ?? 150),
   crossref: Number(process.env.CROSSREF_MIN_INTERVAL_MS ?? 150),
   scielo: Number(process.env.SCIELO_MIN_INTERVAL_MS ?? 200),
+  contraloria: Number(process.env.CONTRALORIA_MIN_INTERVAL_MS ?? 300),
+  pjud: Number(process.env.PJUD_MIN_INTERVAL_MS ?? 500),
+  diariooficial: Number(process.env.DIARIO_OFICIAL_MIN_INTERVAL_MS ?? 300),
   websearch: Number(process.env.WEBSEARCH_MIN_INTERVAL_MS ?? 100),
 };
 
@@ -111,6 +141,13 @@ export function upstreamHostKey(url: string): HostKey {
     if (host.includes("crossref.org")) return "crossref";
     if (host.includes("doaj.org")) return "crossref"; // same polite OA throttle class
     if (host.includes("scielo")) return "scielo";
+    // Official-but-unofficial-API sources scraped best-effort: isolated from
+    // the generic websearch bucket so a CGR/PJUD/Diario Oficial outage or
+    // block doesn't starve (or get starved by) DuckDuckGo/Yahoo scraping.
+    if (host.includes("contraloria.cl") || host.includes("dipres.gob.cl"))
+      return "contraloria";
+    if (host.includes("pjud.cl")) return "pjud";
+    if (host.includes("diariooficial.interior.gob.cl")) return "diariooficial";
   } catch {
     /* ignore */
   }

@@ -100,9 +100,15 @@ test("normalizeArticleNumber ancla al inicio del texto, ignora referencias cruza
     normalizeArticleNumber("Art. 127. El viudo... el articulo 124..."),
     "127",
   );
-  assert.equal(normalizeArticleNumber("Articulo 58 bis.- Nombre es..."), "58 bis");
+  assert.equal(
+    normalizeArticleNumber("Articulo 58 bis.- Nombre es..."),
+    "58 bis",
+  );
   assert.equal(normalizeArticleNumber("Art. 2 o. La costumbre..."), "2");
-  assert.equal(normalizeArticleNumber("Texto sin encabezado de articulo."), undefined);
+  assert.equal(
+    normalizeArticleNumber("Texto sin encabezado de articulo."),
+    undefined,
+  );
 });
 
 test("normalizeFromNombreParte extrae numero y quita el sufijo DEL ART", () => {
@@ -152,10 +158,13 @@ test("decodeEntities preserva saltos de parrafo indentados (LeyChile fixed-width
 });
 
 test("decodeEntities une lineas envueltas de un mismo parrafo", () => {
-  const raw = "     Art. 1698. Incumbe probar las\nobligaciones al que\nalega aquellas.";
+  const raw =
+    "     Art. 1698. Incumbe probar las\nobligaciones al que\nalega aquellas.";
   const decoded = decodeEntities(raw);
   assert.equal(decoded.includes("\n"), false);
-  assert.ok(decoded.includes("Incumbe probar las obligaciones al que alega aquellas."));
+  assert.ok(
+    decoded.includes("Incumbe probar las obligaciones al que alega aquellas."),
+  );
 });
 
 test("parseIncisosAndLiterales aprovecha los saltos de parrafo para detectar incisos implicitos", () => {

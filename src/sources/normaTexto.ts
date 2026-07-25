@@ -150,10 +150,14 @@ export function decodeEntities(text: string): string {
   // Join wrapped continuation lines back into their paragraph (single \n →
   // space) while keeping genuine paragraph breaks (the \n\n inserted above,
   // or any blank line already present in the source) intact.
+  // Use a Private Use Area codepoint (never appears in real LeyChile text) as
+  // a paragraph-break sentinel instead of a literal control character, which
+  // eslint's no-control-regex rule (rightly) flags as suspicious.
+  const PARA_SENTINEL = "\uE000PARA\uE000";
   return marked
-    .replace(/\n{2,}/g, "\x00PARA\x00")
+    .replace(/\n{2,}/g, PARA_SENTINEL)
     .replace(/\s*\n\s*/g, " ")
-    .replace(/\x00PARA\x00/g, "\n\n")
+    .replace(new RegExp(PARA_SENTINEL, "g"), "\n\n")
     .replace(/[ \t]+/g, " ")
     .replace(/ *\n\n */g, "\n\n")
     .trim();
@@ -250,9 +254,7 @@ export function parseIncisosAndLiterales(texto: string): {
       const start = headingMatches[i].index ?? 0;
       const end = headingMatches[i + 1]?.index ?? texto.length;
       const chunk = texto.slice(start, end).trim();
-      const labelMatch = chunk.match(
-        /^Inciso\s+([A-Za-zÁÉÍÓÚáéíóúñÑ0-9º°]+)/i,
-      );
+      const labelMatch = chunk.match(/^Inciso\s+([A-Za-zÁÉÍÓÚáéíóúñÑ0-9º°]+)/i);
       if (labelMatch) {
         incisos.push({ label: labelMatch[1], texto: chunk });
       }

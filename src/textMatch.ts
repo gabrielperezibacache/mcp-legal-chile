@@ -2,11 +2,7 @@
 
 /** Lowercase + strip diacritics so accented/unaccented variants match. */
 export function foldForMatch(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{M}/gu, "")
-    .trim();
+  return value.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").trim();
 }
 
 /** Whole-word containment: avoids short abbreviations like "cc", "ct", or "dt"

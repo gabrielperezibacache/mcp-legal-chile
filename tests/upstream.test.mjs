@@ -32,6 +32,33 @@ test("upstreamHostKey usa websearch por defecto", () => {
   );
 });
 
+test("upstreamHostKey clasifica Contraloría (CGR) en su propio circuito", () => {
+  assert.equal(
+    upstreamHostKey("https://www.contraloria.cl/pdfbuscador/dictamenes/123456"),
+    "contraloria",
+  );
+  assert.equal(
+    upstreamHostKey("https://www.dipres.gob.cl/597/w3-multipropertyvalues"),
+    "contraloria",
+  );
+});
+
+test("upstreamHostKey clasifica PJUD en su propio circuito", () => {
+  assert.equal(
+    upstreamHostKey("https://www.pjud.cl/portal-unificado-sentencias"),
+    "pjud",
+  );
+});
+
+test("upstreamHostKey clasifica Diario Oficial en su propio circuito", () => {
+  assert.equal(
+    upstreamHostKey(
+      "https://www.diariooficial.interior.gob.cl/edicionelectronica/index.php",
+    ),
+    "diariooficial",
+  );
+});
+
 test("websearch permite concurrencia limitada sin serializar la operación completa", async () => {
   let running = 0;
   let maxRunning = 0;

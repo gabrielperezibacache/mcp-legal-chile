@@ -351,8 +351,10 @@ export async function searchLegislacion(
           `Resultados filtrados por el término «${longest}»; verifica relevancia.`,
         );
       }
-    } catch {
-      /* ignore */
+    } catch (error) {
+      warnings.push(
+        `SPARQL término único: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
