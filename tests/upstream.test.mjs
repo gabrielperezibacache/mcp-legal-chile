@@ -1,6 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { upstreamHostKey, withUpstreamLimit } from "../dist/upstream.js";
+import {
+  isUpstreamCoolingDown,
+  noteTerminalUpstreamFailure,
+  resetUpstreamForTests,
+  upstreamHostKey,
+  upstreamStatus,
+  withUpstreamLimit,
+} from "../dist/upstream.js";
+
+test.beforeEach(() => {
+  resetUpstreamForTests();
+});
 
 test("upstreamHostKey clasifica TC", () => {
   assert.equal(
@@ -18,10 +29,24 @@ test("upstreamHostKey clasifica OpenAlex", () => {
   );
 });
 
-test("upstreamHostKey clasifica LeyChile", () => {
+test("upstreamHostKey clasifica LeyChile XML aparte de BCN HTML", () => {
   assert.equal(
     upstreamHostKey("https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=1"),
     "leychile",
+  );
+  assert.equal(
+    upstreamHostKey(
+      "https://www.bcn.cl/leychile/consulta/buscador?termino=despido",
+    ),
+    "bcn",
+  );
+  assert.equal(upstreamHostKey("https://datos.bcn.cl/sparql"), "bcn");
+});
+
+test("upstreamHostKey clasifica DOAJ en su propio circuito", () => {
+  assert.equal(
+    upstreamHostKey("https://doaj.org/api/v3/search/articles/derecho"),
+    "doaj",
   );
 });
 
@@ -30,6 +55,41 @@ test("upstreamHostKey usa websearch por defecto", () => {
     upstreamHostKey("https://html.duckduckgo.com/html/?q=test"),
     "websearch",
   );
+});
+
+test("abort/deadline no abre el circuito upstream", async () => {
+  // Use websearch host (low min-interval) so the test stays fast.
+  const url = "https://abort-circuit.example.test/q";
+  for (let i = 0; i < 5; i++) {
+    await assert.rejects(
+      () =>
+        withUpstreamLimit(url, async () => {
+          throw new DOMException("Aborted", "AbortError");
+        }),
+      /Aborted|AbortError/,
+    );
+  }
+  assert.equal(upstreamStatus().websearch.open, false);
+  assert.equal(upstreamStatus().websearch.failures, 0);
+});
+
+test("fallos mid-call no abren el circuito; solo terminales", async () => {
+  const url = "https://midcall-circuit.example.test/q";
+  for (let i = 0; i < 5; i++) {
+    await assert.rejects(
+      () =>
+        withUpstreamLimit(url, async () => {
+          throw new Error(`HTTP 500 al consultar ${url}`);
+        }),
+      /HTTP 500/,
+    );
+  }
+  assert.equal(upstreamStatus().websearch.open, false);
+
+  noteTerminalUpstreamFailure(url, 500);
+  noteTerminalUpstreamFailure(url, 500);
+  noteTerminalUpstreamFailure(url, 500);
+  assert.equal(upstreamStatus().websearch.open, true);
 });
 
 test("upstreamHostKey clasifica Contraloría (CGR) en su propio circuito", () => {
@@ -57,6 +117,25 @@ test("upstreamHostKey clasifica Diario Oficial en su propio circuito", () => {
     ),
     "diariooficial",
   );
+});
+
+test("isUpstreamCoolingDown refleja circuito abierto", () => {
+  resetUpstreamForTests();
+  assert.equal(isUpstreamCoolingDown("leychile"), false);
+  noteTerminalUpstreamFailure(
+    "https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=1",
+    500,
+  );
+  noteTerminalUpstreamFailure(
+    "https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=1",
+    500,
+  );
+  noteTerminalUpstreamFailure(
+    "https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=1",
+    500,
+  );
+  assert.equal(upstreamStatus().leychile.open, true);
+  assert.equal(isUpstreamCoolingDown("leychile"), true);
 });
 
 test("websearch permite concurrencia limitada sin serializar la operación completa", async () => {

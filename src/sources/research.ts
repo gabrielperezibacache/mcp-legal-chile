@@ -152,16 +152,27 @@ export async function investigarTema(
     ];
 
     sections.push("## 1. Marco normativo");
-    if (leg.status === "fulfilled" && leg.value.results.length) {
-      for (const r of leg.value.results) {
-        sections.push(`- **${r.title}**`);
-        sections.push(`  - Cita: ${r.citation}`);
-        if (r.id) sections.push(`  - idNorma: \`${r.id}\``);
-        sections.push(`  - URL: ${r.url}`);
-        if (r.id) {
-          sections.push(
-            `  - → \`citar_texto_legal\` / \`obtener_articulo\` con idNorma \`${r.id}\``,
-          );
+    if (leg.status === "fulfilled") {
+      if (leg.value.results.length) {
+        for (const r of leg.value.results) {
+          sections.push(`- **${r.title}**`);
+          sections.push(`  - Cita: ${r.citation}`);
+          if (r.id) sections.push(`  - idNorma: \`${r.id}\``);
+          sections.push(`  - URL: ${r.url}`);
+          if (r.id) {
+            sections.push(
+              `  - → \`citar_texto_legal\` / \`obtener_articulo\` con idNorma \`${r.id}\``,
+            );
+          }
+        }
+      } else {
+        sections.push(
+          "- Sin coincidencias de legislación para esta consulta (búsqueda completada).",
+        );
+        if (leg.value.warnings?.length) {
+          for (const w of leg.value.warnings.slice(0, 2)) {
+            sections.push(`  - _${w}_`);
+          }
         }
       }
     } else {

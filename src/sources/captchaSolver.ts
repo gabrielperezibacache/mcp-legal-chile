@@ -33,9 +33,7 @@ export function captchaSolverConfigured(): boolean {
 }
 
 const POLL_INTERVAL_MS = 5_000;
-const POLL_TIMEOUT_MS = Number(
-  process.env.CAPTCHA_SOLVE_TIMEOUT_MS ?? 120_000,
-);
+const POLL_TIMEOUT_MS = Number(process.env.CAPTCHA_SOLVE_TIMEOUT_MS ?? 120_000);
 
 async function sleep(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -69,9 +67,7 @@ async function solveWith2Captcha(
   });
   const submitJson = (await submit.json()) as TwoCaptchaInResponse;
   if (submitJson.status !== 1) {
-    throw new CaptchaSolveError(
-      `2Captcha submit falló: ${submitJson.request}`,
-    );
+    throw new CaptchaSolveError(`2Captcha submit falló: ${submitJson.request}`);
   }
   const captchaId = submitJson.request;
 
@@ -90,7 +86,9 @@ async function solveWith2Captcha(
       return pollJson.request;
     }
     if (pollJson.request !== "CAPCHA_NOT_READY") {
-      throw new CaptchaSolveError(`2Captcha resolvió con error: ${pollJson.request}`);
+      throw new CaptchaSolveError(
+        `2Captcha resolvió con error: ${pollJson.request}`,
+      );
     }
   }
   throw new CaptchaSolveError(
@@ -185,4 +183,3 @@ export async function solveImageCaptcha(
   }
   return solveWithCapSolver(imageBase64, apiKey, signal);
 }
-

@@ -17,7 +17,7 @@ Este MCP usa **solo fuentes públicas sin costo de API**:
 | OpenAlex + DOAJ + Crossref | Doctrina académica OA |
 | SciELO ArticleMeta | Enrich de artículos SciELO (PDF/HTML) por DOI/PID |
 | Portales oficiales (PJUD, CGR, superintendencias, etc.) | Deep links |
-| DuckDuckGo HTML/lite | Búsqueda web best-effort (sin claves) |
+| Yahoo HTML (+ DDG HTML/lite fallback) | Búsqueda web best-effort (sin claves) |
 
 **No** se usan APIs comerciales (Serper, Brave, vLex, etc.).  
 PJUD no publica API de texto: para citar Corte Suprema / Apelaciones, pega el fallo en `citar_jurisprudencia`.
@@ -35,13 +35,13 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | `citar_jurisprudencia` | **Texto + considerando** | API TC gratis, o **texto pegado** (PJUD) |
 | `buscar_doctrina` / `obtener_doctrina` | Metadata + abstract + citas | OpenAlex + **DOAJ** + Crossref + ArticleMeta |
 | `buscar_doctrina_latam` | Metadata + citas + enlaces | Catálogo ISSN + OpenAlex + DOAJ |
-| `buscar_jurisprudencia` | Enlace / candidatos | TC + DDG libre → portales PJUD |
+| `buscar_jurisprudencia` | Enlace / candidatos | TC + web libre (Yahoo) → portales PJUD |
 | `buscar_tc` | Metadata + PDF | API gratuita TC |
 | `resolver_rol` | Enlaces + candidatos | TC + portales |
 | `obtener_fallo_tc` | Extracto + índice de considerandos | API gratuita TC |
 | `buscar_dictamenes` / `resolver_dictamen` | Solo enlace | Contraloría (deep link por número) |
 | `buscar_administrativo` | Solo enlace / portal_stub | CMF, Superintendencia de Salud, SUSESO, SEC, SUPERIR (sin API pública) |
-| `investigar_tema` | Pack mixto (parcial OK) | Orquesta lo anterior (~12s) |
+| `investigar_tema` | Pack mixto (parcial OK) | Orquesta lo anterior (~18s) |
 | `buscar_causa_pjud` / `obtener_causa_pjud` | **Siempre `candidate`** (scraping) | Oficina Judicial Virtual PJUD — **experimental/no oficial**, ver [abajo](#case-tracking-pjud-experimentalno-oficial) |
 
 **Integridad (anti-alucinación):** cada resultado lleva `integrity`:
@@ -52,7 +52,7 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | `candidate` | Metadato o enlace a verificar; no afirmar contenido |
 | `portal_stub` | Solo portal de búsqueda; **no** es un documento encontrado |
 
-**Calidad de citas (1.11):** jurisprudencia unifica el formato chileno (tribunal, tipo, ROL, año, considerando); la web ya no usa el título de página como cita. Doctrina normaliza autores (`Apellido, N.`), completa vol./páginas DOAJ y prioriza relevancia temática + catálogo Chile.
+**Calidad de citas:** jurisprudencia unifica el formato chileno (tribunal, tipo, ROL, año, considerando); la web ya no usa el título de página como cita. Doctrina normaliza autores (`Apellido, N.`), completa vol./páginas DOAJ y prioriza relevancia temática + catálogo Chile. Niveles de `integrity`: `verified` | `candidate` | `portal_stub` (evidence puede ser `full_text` / `metadata` / `link_only`).
 
 **Reglas:** si `evidence=link_only` o `integrity` es `portal_stub`/`candidate`, no afirmes el contenido. `citar_jurisprudencia` **rechaza** un considerando que no exista en el texto (no sustituye por otro). Sin resultados → decirlo; no completar con memoria.
 
@@ -81,11 +81,11 @@ Métricas en vivo: `GET /metrics`
 - Doctrina OA: ranking por relevancia, abstracts (backfill Crossref), enrich SciELO
 - `citar_jurisprudencia` con considerando (TC o texto pegado)
 - Caché en memoria (Redis opcional)
-- Rate limit / circuit breaker **por proveedor** (LeyChile 429 no abre el circuito de doctrina/OpenAlex)
-- Warmup `/warmup` + cron keep-alive
-- Endurecimiento de producción (1.12): CORS explícito para clientes MCP en navegador, rate limit por IP en `/mcp` (60 req/min por defecto, independiente de las cuotas por API key), errores JSON-RPC limpios (sin stack traces ni rutas de archivo aunque `NODE_ENV` no esté seteado), apagado ordenado ante `SIGTERM`/`SIGINT`, timeouts de socket HTTP contra clientes lentos, y `uncaughtException`/`unhandledRejection` no derriban el proceso
+- Rate limit / circuit breaker **por proveedor** (LeyChile XML aislado de BCN SPARQL/HTML; DOAJ aislado de Crossref; abort/deadline no abre circuitos; un solo conteo terminal tras reintentos)
+- Warmup boot + `GET /warmup` (cron) omiten XML si LeyChile está en cooldown 429 / circuito abierto
+- Endurecimiento de producción: CORS explícito para clientes MCP en navegador, rate limit por IP en `/mcp` (60 req/min por defecto, independiente de las cuotas por API key), errores JSON-RPC limpios (sin stack traces ni rutas de archivo aunque `NODE_ENV` no esté seteado), apagado ordenado ante `SIGTERM`/`SIGINT`, timeouts de socket HTTP contra clientes lentos, y `uncaughtException`/`unhandledRejection` no derriban el proceso
 
-> **Nota clientes MCP (Hermes, etc.):** un mensaje global tipo «MCP unreachable» tras ~3 errores suele ser **protección del cliente**, no del servidor. En el servidor los circuitos son por host; ante 429 de LeyChile las tools de texto devuelven markdown útil (URL oficial + reintento) sin marcar `isError` cuando es posible.
+> **Nota clientes MCP (Hermes, etc.):** un mensaje global tipo «MCP unreachable» tras ~3 errores suele ser **protección del cliente**, no del servidor. En el servidor los circuitos son por host; ante 429 o circuito abierto de LeyChile las tools de texto devuelven markdown útil (URL oficial + reintento) sin marcar `isError` cuando es posible.
 
 ## Inicio rápido
 

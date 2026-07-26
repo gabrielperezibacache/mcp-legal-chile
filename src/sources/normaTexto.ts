@@ -1,6 +1,35 @@
 import { XMLParser } from "fast-xml-parser";
 import { xmlCache } from "../cache.js";
+import { numberToOrdinalWords, ordinalWordsToNumber } from "./considerandos.js";
 import { fetchTextWithRetry, HttpStatusError } from "../util.js";
+
+/** Normalize inciso labels so "1" / "1º" / "primero" match. */
+function normalizeIncisoKey(label: string): string {
+  const raw = label.replace(/[º°]/g, "").trim().toLowerCase();
+  if (/^\d{1,3}$/.test(raw)) return raw;
+  const fromWords = ordinalWordsToNumber(raw);
+  if (fromWords != null) return String(fromWords);
+  return raw;
+}
+
+function incisoLabelsMatch(a: string, b: string): boolean {
+  const ka = normalizeIncisoKey(a);
+  const kb = normalizeIncisoKey(b);
+  if (ka === kb) return true;
+  // Also accept word form of a numeric label (and vice versa).
+  const na = Number(ka);
+  const nb = Number(kb);
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb;
+  if (Number.isFinite(na)) {
+    const words = numberToOrdinalWords(na);
+    if (words && normalizeIncisoKey(words) === kb) return true;
+  }
+  if (Number.isFinite(nb)) {
+    const words = numberToOrdinalWords(nb);
+    if (words && normalizeIncisoKey(words) === ka) return true;
+  }
+  return false;
+}
 
 const NS_STRIP = /\{[^}]+\}/g;
 
@@ -249,10 +278,19 @@ export function parseIncisosAndLiterales(texto: string): {
   const incisoHeadingRe =
     /(?:^|[.\-–—]\s+|\n\s*)(Inciso\s+(?:[Pp]rimero|[Ss]egundo|[Tt]ercero|[Cc]uarto|[Qq]uinto|[Ss]exto|[Ss]éptimo|[Oo]ctavo|[Nn]oveno|[Dd]écimo|[Úú]nico|[Ff]inal|\d{1,3}\s*[°ºo]?)\s*[.\-–—:])/g;
   const headingMatches = [...texto.matchAll(incisoHeadingRe)];
-  if (headingMatches.length > 1) {
+  if (headingMatches.length >= 1) {
     for (let i = 0; i < headingMatches.length; i++) {
-      const start = headingMatches[i].index ?? 0;
-      const end = headingMatches[i + 1]?.index ?? texto.length;
+      const match = headingMatches[i];
+      // Prefer the start of the "Inciso …" capture so prefixes like ".\n" do not
+      // break label extraction when slicing the chunk.
+      const captured = match[1] ?? "Inciso";
+      const rawStart = match.index ?? 0;
+      const start = rawStart + match[0].indexOf(captured);
+      const next = headingMatches[i + 1];
+      const nextCaptured = next?.[1] ?? "Inciso";
+      const end = next
+        ? (next.index ?? texto.length) + next[0].indexOf(nextCaptured)
+        : texto.length;
       const chunk = texto.slice(start, end).trim();
       const labelMatch = chunk.match(/^Inciso\s+([A-Za-zÁÉÍÓÚáéíóúñÑ0-9º°]+)/i);
       if (labelMatch) {
@@ -261,12 +299,13 @@ export function parseIncisosAndLiterales(texto: string): {
     }
   } else {
     // Approximate numbered paragraphs as inciso 1, 2, ...
+    // In Chilean drafting the first paragraph of the article *is* inciso 1
+    // (often starting with "Art. N.- …"), so include every paragraph.
     const paragraphs = texto
       .split(/\s{2,}|\n+/)
       .map((p) => p.trim())
       .filter((p) => p.length > 40);
     paragraphs.forEach((p, i) => {
-      if (i === 0) return;
       incisos.push({ label: String(i + 1), texto: p });
     });
   }
@@ -326,11 +365,12 @@ export async function fetchNormaXml(
   } = {},
 ): Promise<string> {
   const code = idNorma.replace(/\D/g, "");
-  const blockedUntil = xml429Until.get(code);
-  if (blockedUntil && Date.now() < blockedUntil) {
-    throw new LeyChileRateLimitError(code, blockedUntil - Date.now());
-  }
+  // Check 429 cool-down inside the loader so fresh/stale cache still wins.
   return xmlCache.getOrSet(`xml:${code}`, async () => {
+    const blockedUntil = xml429Until.get(code);
+    if (blockedUntil && Date.now() < blockedUntil) {
+      throw new LeyChileRateLimitError(code, blockedUntil - Date.now());
+    }
     const xmlUrl = `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
     try {
       const xml = await fetchTextWithRetry(
@@ -341,8 +381,8 @@ export async function fetchNormaXml(
             "Accept-Language": "es-CL,es;q=0.9",
           },
         },
-        opts.timeoutMs ?? 60_000,
-        opts.retries ?? 4,
+        opts.timeoutMs ?? 20_000,
+        opts.retries ?? 2,
         opts.signal,
       );
       if (!xml.includes("<Norma") && !xml.includes("normaId")) {
@@ -517,9 +557,8 @@ export function findIncisoOrLiteral(
     );
   }
   if (opts.inciso) {
-    const needle = opts.inciso.replace(/[º°]/g, "").toLowerCase();
-    const inc = art.incisos.find(
-      (i) => i.label.replace(/[º°]/g, "").toLowerCase() === needle,
+    const inc = art.incisos.find((i) =>
+      incisoLabelsMatch(i.label, opts.inciso!),
     );
     if (inc) {
       return { kind: "inciso", texto: inc.texto, label: `inc. ${inc.label}` };

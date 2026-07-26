@@ -145,7 +145,7 @@ export function registerJurisprudenciaTools(server: McpServer): void {
     {
       title: "Obtener fallo del Tribunal Constitucional",
       description:
-        "Metadatos + extracto/doctrina + indice de considerandos. Si el ROL no esta en el indice de texto del TC, cae a un resumen oficial de ficha (integridad metadata, marcado explicitamente). Para citar un considerando exacto usa citar_jurisprudencia.",
+        "Metadatos + extracto/doctrina + indice de considerandos. Si el ROL no esta en el indice de texto del TC, cae a un resumen oficial de ficha (integridad candidate / evidence=metadata). Para citar un considerando exacto usa citar_jurisprudencia.",
       inputSchema: {
         rol: z.string().min(3).describe("ROL TC, ej. 9666-20 o 9666-2020"),
         formato: formatoSchema,
@@ -171,7 +171,7 @@ export function registerJurisprudenciaTools(server: McpServer): void {
     {
       title: "Citar fragmento exacto de jurisprudencia",
       description:
-        "Cita formal (tribunal, tipo, ROL, ano, considerando) + blockquote. Sin texto: API gratuita TC (si el ROL no esta indexado, usa el resumen oficial de ficha e integridad=metadata; rechaza considerando en ese caso para no inventar). Con texto pegado: fallos PJUD u otros (sin APIs de pago).",
+        "Cita formal (tribunal, tipo, ROL, ano, considerando) + blockquote. Sin texto: API gratuita TC (si el ROL no esta indexado, usa el resumen oficial de ficha e integridad=candidate; rechaza considerando en ese caso para no inventar). Con texto pegado: fallos PJUD u otros (sin APIs de pago).",
       inputSchema: {
         rol: z.string().min(3).describe("ROL, ej. 9666-2020 o 12345-2020"),
         texto: z

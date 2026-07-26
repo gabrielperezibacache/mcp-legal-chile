@@ -255,9 +255,7 @@ function parseCausasFromHtml(html: string, baseUrl: string): CausaPjud[] {
     if (!/\d{1,6}\s*[-–/]\s*\d{2,4}/.test(joined)) continue;
 
     const rolMatch = joined.match(/\b(\d{1,6}\s*[-–]\s*\d{2,4})\b/);
-    const tribunalGuess = cells.find((c) =>
-      /juzgado|corte|tribunal/i.test(c),
-    );
+    const tribunalGuess = cells.find((c) => /juzgado|corte|tribunal/i.test(c));
     causas.push({
       tribunal: tribunalGuess ?? "Tribunal no identificado",
       rol: rolMatch?.[1]?.replace(/\s+/g, ""),
@@ -323,7 +321,10 @@ async function submitSearchForm(
       page
         .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 20_000 })
         .catch(() => undefined),
-      submitButton.first().click().catch(() => undefined),
+      submitButton
+        .first()
+        .click()
+        .catch(() => undefined),
     ]);
 
     const html = await page.content();
@@ -400,7 +401,10 @@ export async function buscarCausaPjud(
       const isRut = /^[\d.]{7,11}-[\dkK]$/.test(rutONombre.trim());
       const formValues: Record<string, string> = isRut
         ? { 'input[name*="rut" i]': rutONombre.trim() }
-        : { 'input[name*="nombre" i], input[name*="litigante" i]': rutONombre.trim() };
+        : {
+            'input[name*="nombre" i], input[name*="litigante" i]':
+              rutONombre.trim(),
+          };
       if (opts.competencia) {
         formValues['select[name*="competencia" i]'] = opts.competencia;
       }
@@ -467,4 +471,3 @@ export async function obtenerCausaPjud(
     }),
   );
 }
-

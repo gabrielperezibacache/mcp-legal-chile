@@ -7,10 +7,12 @@ import type { SearchResponse } from "../types.js";
 import { formatResultsJson } from "../util.js";
 import {
   ArticleNotFoundError,
+  FragmentNotFoundError,
   LeyChileRateLimitError,
   LeyChileXmlError,
   UnsupportedNormaStructureError,
 } from "../sources/normaTexto.js";
+import { CircuitOpenError } from "../upstream.js";
 
 /** Must exceed TC keyword latency (often 6–14s) without cascading into slow web scrape. */
 export const SEARCH_TOOL_TIMEOUT_MS = Number(
@@ -62,6 +64,16 @@ export function formatLegalExtractionError(
   const official = `https://www.bcn.cl/leychile/navegar?idNorma=${code}`;
   const xml = `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
   const message = error instanceof Error ? error.message : String(error);
+
+  if (error instanceof FragmentNotFoundError) {
+    return [
+      "Fragmento (inciso/literal) no encontrado en el parseo del artículo.",
+      `Detalle: ${message}`,
+      `Fuente oficial: ${official}`,
+      "El artículo existe; revisa la numeración del inciso/literal o usa obtener_texto_norma modo=indice / modo=cuerpo. No inventes el fragmento.",
+    ].join("\n");
+  }
+
   const title =
     error instanceof ArticleNotFoundError
       ? "Artículo no encontrado."
@@ -71,18 +83,23 @@ export function formatLegalExtractionError(
           ? "XML LeyChile inválido o no disponible."
           : error instanceof LeyChileRateLimitError
             ? "LeyChile rate-limit temporal (HTTP 429)."
-            : "No se pudo extraer texto oficial desde LeyChile.";
+            : error instanceof CircuitOpenError
+              ? "Circuito LeyChile temporalmente abierto (protección de rate-limit)."
+              : "No se pudo extraer texto oficial desde LeyChile.";
 
   return [
     title,
     `Detalle: ${message}`,
     `Fuente oficial: ${official}`,
     `XML oficial: ${xml}`,
-    "No inventes el contenido: verifica manualmente o usa obtener_texto_norma modo=indice para ver artículos detectados.",
+    "No inventes el contenido: verifica manualmente o usa obtener_texto_norma modo=indice (o modo=cuerpo) para ver artículos detectados.",
   ].join("\n");
 }
 
-/** Soft 429: useful markdown without isError so MCP clients (e.g. Hermes) do not trip global unreachable. */
+/**
+ * Soft degradations (429 / circuit open): useful markdown without isError so
+ * MCP clients (e.g. Hermes) do not trip a global "unreachable" cooldown.
+ */
 export function legalExtractionFailure(error: unknown, idNorma: string) {
   const code = idNorma.replace(/\D/g, "");
   const official = `https://www.bcn.cl/leychile/navegar?idNorma=${code}`;
@@ -92,6 +109,18 @@ export function legalExtractionFailure(error: unknown, idNorma: string) {
       [
         "LeyChile está limitando temporalmente las solicitudes (HTTP 429).",
         `Reintenta en ~${sec}s. Mientras tanto usa la URL oficial (no inventes el texto).`,
+        `Fuente oficial: ${official}`,
+        `XML: https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
+        `Detalle: ${error.message}`,
+      ].join("\n"),
+    );
+  }
+  if (error instanceof CircuitOpenError) {
+    const sec = Math.max(1, Math.ceil(error.retryAfterMs / 1000));
+    return okText(
+      [
+        `El circuito de ${error.host} está temporalmente abierto tras fallos upstream.`,
+        `Reintenta en ~${sec}s. Usa la URL oficial mientras tanto (no inventes el texto).`,
         `Fuente oficial: ${official}`,
         `XML: https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
         `Detalle: ${error.message}`,

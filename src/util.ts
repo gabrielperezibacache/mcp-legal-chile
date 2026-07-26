@@ -1,4 +1,4 @@
-import { throwIfAborted } from "./deadline.js";
+import { isAbortLikeError, throwIfAborted } from "./deadline.js";
 import { metrics } from "./metrics.js";
 import {
   noteTerminalUpstreamFailure,
@@ -19,7 +19,7 @@ export const WEB_SEARCH_USER_AGENT =
 
 /** Polite bot UA for services that accept structured bot identifiers. */
 export const BOT_USER_AGENT =
-  process.env.WEB_SEARCH_USER_AGENT ??
+  process.env.BOT_USER_AGENT ??
   `Mozilla/5.0 (compatible; MCP-Legal-Chile/${pkg.version}; +https://mcp-legal-chile.onrender.com)`;
 
 /** Contact for OpenAlex/Crossref polite pools (higher rate limits). */
@@ -86,13 +86,16 @@ export function parseRetryAfterMs(
 }
 
 export function isRetryableFetchError(error: unknown): boolean {
+  // Open circuits are terminal for this call — retrying only wastes budget.
+  if (error instanceof Error && error.name === "CircuitOpenError") {
+    return false;
+  }
   if (error instanceof HttpStatusError) {
     return error.status === 429 || error.status >= 500;
   }
   const message = error instanceof Error ? error.message : String(error);
-  return /HTTP 429|HTTP 5\d\d|aborted|fetch failed|Circuito abierto/i.test(
-    message,
-  );
+  if (/Circuito abierto/i.test(message)) return false;
+  return /HTTP 429|HTTP 5\d\d|aborted|fetch failed/i.test(message);
 }
 
 async function rawFetch(
@@ -136,28 +139,61 @@ function throwIfNotOk(response: Response, url: string): void {
   throw new HttpStatusError(response.status, url, retryAfterMs);
 }
 
+export type FetchCountMode = "terminal" | "none";
+
+function isCircuitOpenError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === "CircuitOpenError" || /Circuito abierto/i.test(error.message)
+  );
+}
+
+async function runCountedFetch<T>(
+  url: string,
+  countFailure: FetchCountMode,
+  fn: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    if (
+      countFailure === "terminal" &&
+      !isAbortLikeError(error) &&
+      !isCircuitOpenError(error)
+    ) {
+      const status =
+        error instanceof HttpStatusError ? error.status : undefined;
+      noteTerminalUpstreamFailure(url, status);
+    }
+    throw error;
+  }
+}
+
 export async function fetchJson<T>(
   url: string,
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
   signal?: AbortSignal,
+  countFailure: FetchCountMode = "terminal",
 ): Promise<T> {
-  return metrics.time(metricForUrl(url), async () => {
-    const response = await rawFetch(
-      url,
-      {
-        ...init,
-        headers: {
-          Accept: "application/json",
-          ...(init.headers ?? {}),
+  return metrics.time(metricForUrl(url), () =>
+    runCountedFetch(url, countFailure, async () => {
+      const response = await rawFetch(
+        url,
+        {
+          ...init,
+          headers: {
+            Accept: "application/json",
+            ...(init.headers ?? {}),
+          },
         },
-      },
-      timeoutMs,
-      signal,
-    );
-    throwIfNotOk(response, url);
-    return (await response.json()) as T;
-  });
+        timeoutMs,
+        signal,
+      );
+      throwIfNotOk(response, url);
+      return (await response.json()) as T;
+    }),
+  );
 }
 
 export async function fetchText(
@@ -165,12 +201,15 @@ export async function fetchText(
   init: RequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
   signal?: AbortSignal,
+  countFailure: FetchCountMode = "terminal",
 ): Promise<string> {
-  return metrics.time(metricForUrl(url), async () => {
-    const response = await rawFetch(url, init, timeoutMs, signal);
-    throwIfNotOk(response, url);
-    return await response.text();
-  });
+  return metrics.time(metricForUrl(url), () =>
+    runCountedFetch(url, countFailure, async () => {
+      const response = await rawFetch(url, init, timeoutMs, signal);
+      throwIfNotOk(response, url);
+      return await response.text();
+    }),
+  );
 }
 
 export async function fetchTextWithRetry(
@@ -184,7 +223,8 @@ export async function fetchTextWithRetry(
   for (let attempt = 0; attempt < retries; attempt++) {
     throwIfAborted(signal);
     try {
-      return await fetchText(url, init, timeoutMs, signal);
+      // Mid-retry failures stay transient in withUpstreamLimit; count once below.
+      return await fetchText(url, init, timeoutMs, signal, "none");
     } catch (error) {
       lastError = error;
       const retryable = isRetryableFetchError(error);
@@ -199,10 +239,9 @@ export async function fetchTextWithRetry(
       await new Promise((r) => setTimeout(r, waitMs));
     }
   }
-  const status =
-    lastError instanceof HttpStatusError ? lastError.status : undefined;
-  // Mid-attempt 429s do not open the circuit; count only the terminal exhaustion.
-  if (status === 429) {
+  if (!isAbortLikeError(lastError) && !isCircuitOpenError(lastError)) {
+    const status =
+      lastError instanceof HttpStatusError ? lastError.status : undefined;
     noteTerminalUpstreamFailure(url, status);
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));

@@ -39,6 +39,11 @@ test("isRetryableFetchError cubre 429 y fetch failed", () => {
   assert.equal(isRetryableFetchError(new Error("fetch failed")), true);
   assert.equal(isRetryableFetchError(new Error("HTTP 503")), true);
   assert.equal(isRetryableFetchError(new Error("not found")), false);
+  const circuit = new Error(
+    "Circuito abierto para leychile. Reintenta en ~30s.",
+  );
+  circuit.name = "CircuitOpenError";
+  assert.equal(isRetryableFetchError(circuit), false);
 });
 
 test("backoff efectivo usa max(exponencial, Retry-After)", () => {

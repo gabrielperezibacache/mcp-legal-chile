@@ -1,10 +1,12 @@
 import type { CitationResult } from "../types.js";
 import { formatChileanCitation } from "../citation.js";
 import { webCache } from "../cache.js";
-import { throwIfAborted } from "../deadline.js";
+import { isAbortLikeError, throwIfAborted } from "../deadline.js";
 import { parseCaseIdentifiers } from "../parsers.js";
+import { noteTerminalUpstreamFailure } from "../upstream.js";
 import {
   fetchText,
+  HttpStatusError,
   isRetryableFetchError,
   stripHtml,
   uniqueByUrl,
@@ -122,6 +124,7 @@ async function fetchYahooHtml(
     },
     WEB_SEARCH_TIMEOUT_MS,
     signal,
+    "none",
   );
 }
 
@@ -185,6 +188,7 @@ async function searchDuckDuckGoHtml(
     },
     WEB_SEARCH_TIMEOUT_MS,
     signal,
+    "none",
   );
   return uniqueByUrl(extractDuckDuckGoHits(html)).slice(0, limit);
 }
@@ -206,6 +210,7 @@ async function searchDuckDuckGoLite(
     },
     WEB_SEARCH_TIMEOUT_MS,
     signal,
+    "none",
   );
   const hits = uniqueByUrl(extractLiteHits(html)).slice(0, limit);
   if (hits.length === 0) {
@@ -215,13 +220,20 @@ async function searchDuckDuckGoLite(
   return hits;
 }
 
-/** Free web search via DuckDuckGo HTML, then lite fallback (best-effort). */
+/** Free web search via Yahoo HTML, then DuckDuckGo HTML/lite fallback (best-effort). */
 export async function searchWeb(
   query: string,
-  opts: { site?: string; limit?: number; signal?: AbortSignal } = {},
+  opts: {
+    site?: string;
+    limit?: number;
+    signal?: AbortSignal;
+    /** Default terminal; pass "none" when the caller aggregates many site searches. */
+    countFailure?: "terminal" | "none";
+  } = {},
 ): Promise<WebHit[]> {
   throwIfAborted(opts.signal);
   const limit = opts.limit ?? 8;
+  const countFailure = opts.countFailure ?? "terminal";
   const q = opts.site ? `${query} site:${opts.site}` : query;
   const failKey = `webfail:${q}`;
   if (isFailCached(failKey)) {
@@ -236,6 +248,10 @@ export async function searchWeb(
     // Yahoo HTML SERP is the primary free backend: as of 2026 DuckDuckGo's
     // html/lite endpoints consistently return anti-bot CAPTCHA challenges
     // (status 202 + anomaly-modal) instead of results.
+    //
+    // Backends use countFailure:"none" so Yahoo retry + DDG + lite cannot
+    // open the circuit in one call; we count one terminal failure at the end
+    // unless the orchestrator disabled counting.
     try {
       const hits = await searchYahoo(q, limit, opts.signal);
       if (hits.length) return hits;
@@ -257,6 +273,18 @@ export async function searchWeb(
           );
         } catch (liteError) {
           markFail(failKey);
+          if (countFailure === "terminal" && !isAbortLikeError(liteError)) {
+            const status =
+              liteError instanceof HttpStatusError
+                ? liteError.status
+                : yahooError instanceof HttpStatusError
+                  ? yahooError.status
+                  : undefined;
+            noteTerminalUpstreamFailure(
+              "https://search.yahoo.com/search",
+              status,
+            );
+          }
           throw liteError instanceof Error
             ? liteError
             : new Error(String(liteError));

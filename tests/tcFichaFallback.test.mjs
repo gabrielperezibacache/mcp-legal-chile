@@ -58,7 +58,8 @@ test("obtenerFalloTc cae a la ficha cuando el ROL no está en el índice de text
     assert.equal(pack.resultado, "Acoge");
     assert.match(pack.doctrina ?? "", /inconstitucionalidad/i);
     assert.match(pack.markdown, /no indexado en el buscador de texto íntegro/i);
-    assert.match(pack.markdown, /`metadata`/);
+    assert.match(pack.markdown, /`candidate`/);
+    assert.match(pack.markdown, /evidence=metadata/);
   } finally {
     globalThis.fetch = original;
   }
@@ -71,7 +72,7 @@ test("citarJurisprudencia cae a la ficha (evidence=metadata) sin considerando", 
     const quote = await citarJurisprudencia({ rol: "1710-10" });
     assert.equal(quote.evidence, "metadata");
     assert.match(quote.texto, /inconstitucionalidad/i);
-    assert.match(quote.markdown, /`metadata`/);
+    assert.match(quote.markdown, /`candidate`/);
     assert.ok(
       quote.warnings.some((w) =>
         /no indexada en el buscador de texto/i.test(w),

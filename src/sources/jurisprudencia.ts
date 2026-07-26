@@ -22,7 +22,8 @@ import {
   searchTcSentencias,
   type TcSearchHit,
 } from "./tcBuscador.js";
-import { uniqueByUrl } from "../util.js";
+import { noteTerminalUpstreamFailure } from "../upstream.js";
+import { HttpStatusError, uniqueByUrl } from "../util.js";
 import { searchWeb, webHitsToCitations } from "./websearch.js";
 
 /** Fail-fast web scrape budget so DDG/datacenter blocks never eat the tool deadline. */
@@ -530,39 +531,57 @@ export async function resolverRol(opts: {
       // See buildWebQuery: Yahoo drops `site:` scoping entirely once an OR
       // clause is present, so keep this to plain terms only.
       const q = `rol ${norm.display} ${tribunal ?? ""} sentencia`.trim();
+      let siteNetworkFails = 0;
+      let lastWebStatus: number | undefined;
       for (const site of sites) {
-        const hits = await searchWeb(q, {
-          site,
-          limit: opts.limite ?? 5,
-          signal: opts.signal,
-        });
-        const filtered = hits.filter((h) =>
-          looksLikeCourtHit(h.title, h.url, h.snippet),
-        );
-        // Prefer hits that mention the same ROL number.
-        const ranked = (filtered.length ? filtered : hits).sort((a, b) => {
-          const aHit =
-            rolMatches(a.title, norm) || rolMatches(a.snippet ?? "", norm)
-              ? 1
-              : 0;
-          const bHit =
-            rolMatches(b.title, norm) || rolMatches(b.snippet ?? "", norm)
-              ? 1
-              : 0;
-          if (aHit !== bHit) return bHit - aHit;
-          return (
-            scoreCourtHit(b.title, b.url, b.snippet) -
-            scoreCourtHit(a.title, a.url, a.snippet)
+        try {
+          const hits = await searchWeb(q, {
+            site,
+            limit: opts.limite ?? 5,
+            signal: opts.signal,
+            countFailure: "none",
+          });
+          const filtered = hits.filter((h) =>
+            looksLikeCourtHit(h.title, h.url, h.snippet),
           );
-        });
-        results.push(
-          ...webHitsToCitations(
-            ranked,
-            "jurisprudencia",
-            portal?.name ?? tribunal ?? "Poder Judicial de Chile",
-          ),
+          // Prefer hits that mention the same ROL number.
+          const ranked = (filtered.length ? filtered : hits).sort((a, b) => {
+            const aHit =
+              rolMatches(a.title, norm) || rolMatches(a.snippet ?? "", norm)
+                ? 1
+                : 0;
+            const bHit =
+              rolMatches(b.title, norm) || rolMatches(b.snippet ?? "", norm)
+                ? 1
+                : 0;
+            if (aHit !== bHit) return bHit - aHit;
+            return (
+              scoreCourtHit(b.title, b.url, b.snippet) -
+              scoreCourtHit(a.title, a.url, a.snippet)
+            );
+          });
+          results.push(
+            ...webHitsToCitations(
+              ranked,
+              "jurisprudencia",
+              portal?.name ?? tribunal ?? "Poder Judicial de Chile",
+            ),
+          );
+          if (results.length >= (opts.limite ?? 5)) break;
+        } catch (siteError) {
+          if (isAbortLikeError(siteError)) throw siteError;
+          siteNetworkFails += 1;
+          if (siteError instanceof HttpStatusError) {
+            lastWebStatus = siteError.status;
+          }
+          warnings.push(friendlyPjudResolverWarning(siteError));
+        }
+      }
+      if (siteNetworkFails > 0 && results.length === 0) {
+        noteTerminalUpstreamFailure(
+          "https://search.yahoo.com/search",
+          lastWebStatus,
         );
-        if (results.length >= (opts.limite ?? 5)) break;
       }
     } catch (error) {
       warnings.push(friendlyPjudResolverWarning(error));
@@ -685,8 +704,10 @@ export async function obtenerFalloTc(
       ? `- **Considerandos detectados:** ${considerandos.length}`
       : undefined,
     fichaOnly
-      ? `- **Integridad:** \`metadata\` — no indexado en el buscador de texto íntegro del TC; se muestra el resumen oficial de doctrina (ficha). Usa el PDF oficial para el cuerpo completo.`
-      : `- **Integridad:** \`verified\` (extracto) / verificar PDF para citas procesales`,
+      ? `- **Integridad:** \`candidate\` — no indexado en el buscador de texto íntegro del TC; se muestra el resumen oficial de doctrina (ficha, evidence=metadata). Usa el PDF oficial para el cuerpo completo.`
+      : (hit?.content?.length ?? 0) >= 400
+        ? `- **Integridad:** \`verified\` (extracto) / verificar PDF para citas procesales`
+        : `- **Integridad:** \`candidate\` — extracto TC corto o incompleto; verificar PDF oficial antes de citar`,
     `- **Ficha:** ${url}`,
     pdfUrl ? `- **PDF oficial:** ${pdfUrl}` : undefined,
     "",
@@ -897,6 +918,7 @@ export async function searchJurisprudencia(
                 site,
                 limit: Math.max(2, Math.ceil(limit * share) + 2),
                 signal: webSignal,
+                countFailure: "none",
               });
               const scored = hits
                 .map((h) => ({
@@ -922,7 +944,11 @@ export async function searchJurisprudencia(
                   matchesYearFilter(c, opts.anio),
                 );
               }
-              return { citations, warning: undefined as string | undefined };
+              return {
+                citations,
+                warning: undefined as string | undefined,
+                failed: false,
+              };
             } catch (error) {
               if (isAbortLikeError(error)) throw error;
               return {
@@ -931,6 +957,9 @@ export async function searchJurisprudencia(
                   error instanceof Error ? error.message : String(error),
                   site,
                 ),
+                failed: true,
+                status:
+                  error instanceof HttpStatusError ? error.status : undefined,
               };
             }
           });
@@ -938,9 +967,23 @@ export async function searchJurisprudencia(
         },
         opts.signal,
       );
+      let webFails = 0;
+      let lastWebStatus: number | undefined;
+      let webCitations = 0;
       for (const part of webParts) {
         results.push(...part.citations);
+        webCitations += part.citations.length;
         if (part.warning) warnings.push(part.warning);
+        if (part.failed) {
+          webFails += 1;
+          if (part.status != null) lastWebStatus = part.status;
+        }
+      }
+      if (webFails > 0 && webCitations === 0) {
+        noteTerminalUpstreamFailure(
+          "https://search.yahoo.com/search",
+          lastWebStatus,
+        );
       }
     } catch (error) {
       if (opts.signal?.aborted) throw error;
@@ -975,7 +1018,7 @@ export async function searchJurisprudencia(
     searchUrls: {
       poderJudicial: "https://www.pjud.cl/portal-unificado-sentencias",
       tribunalConstitucional: "https://buscador.tcchile.cl/",
-      busquedaSugerida: `https://duckduckgo.com/?q=${encodeURIComponent(`${query} sentencia site:pjud.cl`)}`,
+      busquedaSugerida: `https://search.yahoo.com/search?p=${encodeURIComponent(`${query} sentencia site:pjud.cl`)}`,
     },
   };
 }

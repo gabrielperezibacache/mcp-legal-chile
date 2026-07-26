@@ -1,3 +1,4 @@
+import { isAbortLikeError } from "./deadline.js";
 import { metrics } from "./metrics.js";
 
 export type HostKey =
@@ -6,6 +7,7 @@ export type HostKey =
   | "tc"
   | "openalex"
   | "crossref"
+  | "doaj"
   | "scielo"
   | "contraloria"
   | "pjud"
@@ -29,6 +31,7 @@ const circuits: Record<HostKey, CircuitState> = {
   tc: makeCircuit(),
   openalex: makeCircuit(),
   crossref: makeCircuit(),
+  doaj: makeCircuit(),
   scielo: makeCircuit(),
   contraloria: makeCircuit(),
   pjud: makeCircuit(),
@@ -43,6 +46,7 @@ const startQueues: Record<HostKey, Promise<unknown>> = {
   tc: Promise.resolve(),
   openalex: Promise.resolve(),
   crossref: Promise.resolve(),
+  doaj: Promise.resolve(),
   scielo: Promise.resolve(),
   contraloria: Promise.resolve(),
   pjud: Promise.resolve(),
@@ -57,6 +61,7 @@ const active: Record<HostKey, number> = {
   tc: 0,
   openalex: 0,
   crossref: 0,
+  doaj: 0,
   scielo: 0,
   contraloria: 0,
   pjud: 0,
@@ -71,6 +76,7 @@ const waiters: Record<HostKey, Array<() => void>> = {
   tc: [],
   openalex: [],
   crossref: [],
+  doaj: [],
   scielo: [],
   contraloria: [],
   pjud: [],
@@ -85,6 +91,7 @@ const MAX_CONCURRENT: Record<HostKey, number> = {
   tc: Number(process.env.TC_MAX_CONCURRENT ?? 2),
   openalex: Number(process.env.OPENALEX_MAX_CONCURRENT ?? 2),
   crossref: Number(process.env.CROSSREF_MAX_CONCURRENT ?? 2),
+  doaj: Number(process.env.DOAJ_MAX_CONCURRENT ?? 2),
   scielo: Number(process.env.SCIELO_MAX_CONCURRENT ?? 2),
   // Contraloria/PJUD/Diario Oficial have no official API — scraped best-effort,
   // so they get their own (conservative) buckets instead of sharing the
@@ -105,6 +112,7 @@ const MIN_INTERVAL_MS: Record<HostKey, number> = {
   tc: Number(process.env.TC_MIN_INTERVAL_MS ?? 200),
   openalex: Number(process.env.OPENALEX_MIN_INTERVAL_MS ?? 150),
   crossref: Number(process.env.CROSSREF_MIN_INTERVAL_MS ?? 150),
+  doaj: Number(process.env.DOAJ_MIN_INTERVAL_MS ?? 150),
   scielo: Number(process.env.SCIELO_MIN_INTERVAL_MS ?? 200),
   contraloria: Number(process.env.CONTRALORIA_MIN_INTERVAL_MS ?? 300),
   pjud: Number(process.env.PJUD_MIN_INTERVAL_MS ?? 500),
@@ -119,7 +127,7 @@ const CIRCUIT_OPEN_MS = Number(process.env.CIRCUIT_OPEN_MS ?? 90_000);
 const CIRCUIT_THRESHOLD = Number(process.env.CIRCUIT_THRESHOLD ?? 3);
 
 async function acquireSlot(key: HostKey): Promise<void> {
-  if (active[key] >= MAX_CONCURRENT[key]) {
+  while (active[key] >= MAX_CONCURRENT[key]) {
     await new Promise<void>((resolve) => waiters[key].push(resolve));
   }
   active[key] += 1;
@@ -127,6 +135,7 @@ async function acquireSlot(key: HostKey): Promise<void> {
 
 function releaseSlot(key: HostKey): void {
   active[key] = Math.max(0, active[key] - 1);
+  // Wake waiters one by one; each re-checks capacity in acquireSlot's while loop.
   waiters[key].shift()?.();
 }
 
@@ -143,15 +152,20 @@ async function scheduleStart(key: HostKey): Promise<void> {
   await scheduled;
 }
 
+/**
+ * Classify upstream hosts into isolated circuit buckets.
+ * LeyChile XML (`leychile.cl`) is separate from BCN metadata/HTML (`bcn.cl`)
+ * so a 429 on obtxml does not block SPARQL or the LeyChile HTML buscador.
+ */
 export function upstreamHostKey(url: string): HostKey {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    if (host.includes("datos.bcn.cl")) return "bcn";
-    if (host.includes("leychile") || host.includes("bcn.cl")) return "leychile";
+    if (host.includes("leychile.cl")) return "leychile";
+    if (host.includes("bcn.cl")) return "bcn";
     if (host.includes("tcchile.cl")) return "tc";
     if (host.includes("openalex.org")) return "openalex";
     if (host.includes("crossref.org")) return "crossref";
-    if (host.includes("doaj.org")) return "crossref"; // same polite OA throttle class
+    if (host.includes("doaj.org")) return "doaj";
     if (host.includes("scielo")) return "scielo";
     // Official-but-unofficial-API sources scraped best-effort: isolated from
     // the generic websearch bucket so a CGR/PJUD/Diario Oficial outage or
@@ -172,12 +186,14 @@ export function upstreamHostKey(url: string): HostKey {
 }
 
 export class CircuitOpenError extends Error {
+  host: HostKey;
   retryAfterMs: number;
   constructor(host: HostKey, retryAfterMs: number) {
     super(
       `Circuito abierto para ${host}. Reintenta en ~${Math.ceil(retryAfterMs / 1000)}s.`,
     );
     this.name = "CircuitOpenError";
+    this.host = host;
     this.retryAfterMs = retryAfterMs;
   }
 }
@@ -206,6 +222,15 @@ function noteTransient429(key: HostKey): void {
   circuits[key].last429At = Date.now();
 }
 
+/** Metrics-only: mid-retry / mid-fallback failures must not open the circuit. */
+function noteTransientFailure(key: HostKey, status?: number): void {
+  metrics.markUpstreamError();
+  if (status === 429) {
+    metrics.markUpstream429();
+    circuits[key].last429At = Date.now();
+  }
+}
+
 function noteFailure(key: HostKey, status?: number): void {
   metrics.markUpstreamError();
   if (status === 429) {
@@ -220,14 +245,29 @@ function noteFailure(key: HostKey, status?: number): void {
 }
 
 /**
- * Count a terminal upstream failure after retries are exhausted.
- * Mid-retry 429s should use noteTransient429 via withUpstreamLimit instead.
+ * Count a terminal upstream failure after retries / fallbacks are exhausted.
+ * Mid-retry errors go through withUpstreamLimit as transient only.
  */
 export function noteTerminalUpstreamFailure(
   url: string,
   status?: number,
 ): void {
   noteFailure(upstreamHostKey(url), status);
+}
+
+/** True when the host circuit is open or saw a recent 429 (warmup should skip). */
+export function isUpstreamCoolingDown(
+  key: HostKey,
+  recent429Ms = 60_000,
+): boolean {
+  const c = circuits[key];
+  if (c.openedAt != null && Date.now() - c.openedAt < CIRCUIT_OPEN_MS) {
+    return true;
+  }
+  if (c.last429At != null && Date.now() - c.last429At < recent429Ms) {
+    return true;
+  }
+  return false;
 }
 
 /** Limit concurrency per provider and stagger starts without head-of-line blocking. */
@@ -246,14 +286,19 @@ export async function withUpstreamLimit<T>(
       noteSuccess(key);
       return value;
     } catch (error) {
+      // Deadlines/aborts are client-side budget — do not punish the host circuit.
+      if (isAbortLikeError(error)) {
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       const statusMatch = message.match(/HTTP (\d+)/);
       const status = statusMatch ? Number(statusMatch[1]) : undefined;
-      // Do not open the circuit on mid-attempt 429 — fetchTextWithRetry may recover.
+      // Never open the circuit here: fetchTextWithRetry / searchWeb count
+      // a single terminal failure after all attempts are exhausted.
       if (status === 429) {
         noteTransient429(key);
       } else {
-        noteFailure(key, status);
+        noteTransientFailure(key, status);
       }
       throw error;
     }
@@ -278,4 +323,14 @@ export function upstreamStatus() {
       },
     ]),
   );
+}
+
+/** Test helper: reset all circuits/slots between unit tests. */
+export function resetUpstreamForTests(): void {
+  for (const key of Object.keys(circuits) as HostKey[]) {
+    circuits[key] = makeCircuit();
+    active[key] = 0;
+    waiters[key] = [];
+    startQueues[key] = Promise.resolve();
+  }
 }

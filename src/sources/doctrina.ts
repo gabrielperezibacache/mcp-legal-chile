@@ -487,6 +487,7 @@ export async function searchDoctrinaLatam(
   query: string,
   limit = 8,
   pais: LatamCountry,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<SearchResponse> {
   const label = LATAM_COUNTRY_LABELS[pais];
   const warnings: string[] = [
@@ -498,7 +499,13 @@ export async function searchDoctrinaLatam(
   if (issns.length) {
     try {
       records.push(
-        ...(await searchDoctrineJournals(query, limit, issns, pais)),
+        ...(await searchDoctrineJournals(
+          query,
+          limit,
+          issns,
+          pais,
+          opts.signal,
+        )),
       );
     } catch (error) {
       warnings.push(
@@ -513,6 +520,7 @@ export async function searchDoctrinaLatam(
     records.push(
       ...(await searchDoajDoctrine(query, Math.max(4, limit - records.length), {
         countryHint: pais,
+        signal: opts.signal,
       })),
     );
   } catch (error) {
@@ -644,9 +652,10 @@ export async function obtenerDoctrina(opts: {
   openAlexId?: string;
   scieloPid?: string;
   collection?: string;
+  signal?: AbortSignal;
 }): Promise<DoctrineRecord> {
   if (opts.scieloPid) {
-    return obtenerArticuloSciELO(opts.scieloPid, opts.collection);
+    return obtenerArticuloSciELO(opts.scieloPid, opts.collection, opts.signal);
   }
   if (opts.doi) {
     const doi = opts.doi.replace(/^https?:\/\/doi\.org\//i, "");
@@ -658,7 +667,7 @@ export async function obtenerDoctrina(opts: {
       doi.startsWith("10.22201/")
     ) {
       try {
-        return await obtenerArticuloPorDoiSciELO(doi, collection);
+        return await obtenerArticuloPorDoiSciELO(doi, collection, opts.signal);
       } catch {
         // fallback OpenAlex
       }
@@ -667,11 +676,14 @@ export async function obtenerDoctrina(opts: {
       politeUrl(
         `https://api.openalex.org/works/https://doi.org/${encodeURIComponent(doi)}?select=id,title,display_name,doi,publication_year,type,abstract_inverted_index,biblio,primary_location,authorships`,
       ),
+      {},
+      undefined,
+      opts.signal,
     );
     const parsed = fromOpenAlex(work);
     if (parsed) {
       if (!parsed.abstract) {
-        const abs = await fetchCrossrefAbstract(doi);
+        const abs = await fetchCrossrefAbstract(doi, opts.signal);
         if (abs) return { ...parsed, abstract: abs };
       }
       return parsed;
@@ -685,6 +697,9 @@ export async function obtenerDoctrina(opts: {
       politeUrl(
         `https://api.openalex.org/works/${encodeURIComponent(id)}?select=id,title,display_name,doi,publication_year,type,abstract_inverted_index,biblio,primary_location,authorships`,
       ),
+      {},
+      undefined,
+      opts.signal,
     );
     const parsed = fromOpenAlex(work);
     if (parsed) return parsed;

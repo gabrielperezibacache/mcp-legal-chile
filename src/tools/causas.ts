@@ -100,10 +100,9 @@ function okCausaSearch(
 function failCausa(prefix: string, error: unknown) {
   if (error instanceof PjudCausasSolverBudgetError) {
     return okText(
-      [
-        `${prefix}: presupuesto diario de CAPTCHA agotado.`,
-        error.message,
-      ].join("\n"),
+      [`${prefix}: presupuesto diario de CAPTCHA agotado.`, error.message].join(
+        "\n",
+      ),
     );
   }
   if (error instanceof PjudCausasCaptchaError) {
@@ -198,4 +197,3 @@ export function registerCausasTools(server: McpServer): void {
     },
   );
 }
-

@@ -10,7 +10,7 @@ import { logger, newRequestId } from "./logger.js";
 import { metrics } from "./metrics.js";
 import { createServer, VERSION } from "./server.js";
 import { parseNormaTexto } from "./sources/normaTexto.js";
-import { upstreamStatus } from "./upstream.js";
+import { isUpstreamCoolingDown, upstreamStatus } from "./upstream.js";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 
@@ -107,9 +107,22 @@ app.get("/metrics", async (_req, res) => {
 
 /** Keep-alive / warmup ping for free→starter cron. */
 app.get("/warmup", async (_req, res) => {
+  if (isUpstreamCoolingDown("leychile")) {
+    res.json({
+      ok: true,
+      skipped: true,
+      reason: "leychile_cooling_down",
+      warmed: [],
+    });
+    return;
+  }
   const ids = HOT_IDS_FOR_WARMUP.slice(0, 3);
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
   for (const id of ids) {
+    if (isUpstreamCoolingDown("leychile")) {
+      results.push({ id, ok: false, error: "leychile_cooling_down" });
+      break;
+    }
     try {
       await parseNormaTexto(id);
       results.push({ id, ok: true });
@@ -273,9 +286,20 @@ app.use(
 
 async function warmupHotNormas(): Promise<void> {
   if (process.env.WARMUP_ON_BOOT === "0") return;
+  if (isUpstreamCoolingDown("leychile")) {
+    logger.info("warmup_skipped", { reason: "leychile_cooling_down" });
+    return;
+  }
   const ids = HOT_IDS_FOR_WARMUP.slice(0, 4);
   logger.info("warmup_start", { ids });
   for (const id of ids) {
+    if (isUpstreamCoolingDown("leychile")) {
+      logger.info("warmup_aborted", {
+        reason: "leychile_cooling_down",
+        remaining: ids.slice(ids.indexOf(id)),
+      });
+      break;
+    }
     try {
       await parseNormaTexto(id);
       logger.info("warmup_ok", { id });

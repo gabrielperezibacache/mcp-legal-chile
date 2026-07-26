@@ -38,12 +38,7 @@ export const SUPERINTENDENCIAS: SuperintendenciaPortal[] = [
   {
     id: "superdesalud",
     name: "Superintendencia de Salud",
-    aliases: [
-      "superintendencia de salud",
-      "superdesalud",
-      "isapres",
-      "ges",
-    ],
+    aliases: ["superintendencia de salud", "superdesalud", "isapres", "ges"],
     sites: ["superdesalud.gob.cl"],
     searchUrl: (query) =>
       `https://www.superdesalud.gob.cl/?s=${encodeURIComponent(query)}`,
@@ -53,7 +48,12 @@ export const SUPERINTENDENCIAS: SuperintendenciaPortal[] = [
   {
     id: "suseso",
     name: "Superintendencia de Seguridad Social",
-    aliases: ["suseso", "seguridad social", "licencia medica", "licencia médica"],
+    aliases: [
+      "suseso",
+      "seguridad social",
+      "licencia medica",
+      "licencia médica",
+    ],
     sites: ["suseso.gob.cl"],
     searchUrl: (query) =>
       `https://www.suseso.gob.cl/612/w3-propertyvalue-10372.html?query=${encodeURIComponent(query)}`,
@@ -79,8 +79,10 @@ export const SUPERINTENDENCIAS: SuperintendenciaPortal[] = [
       "boletín concursal",
     ],
     sites: ["superir.gob.cl"],
-    searchUrl: () => "https://www.superir.gob.cl/transparencia/normativa_a7c.html",
-    notes: "Marco normativo (Ley 20.720 y normas de carácter general) vía portal de transparencia.",
+    searchUrl: () =>
+      "https://www.superir.gob.cl/transparencia/normativa_a7c.html",
+    notes:
+      "Marco normativo (Ley 20.720 y normas de carácter general) vía portal de transparencia.",
   },
 ];
 

@@ -1,14 +1,31 @@
 import type { CitationResult, SearchResponse } from "../types.js";
 import { resolveHotNorma } from "../catalog.js";
 import { sparqlCache } from "../cache.js";
+import { isAbortLikeError } from "../deadline.js";
+import { noteTerminalUpstreamFailure } from "../upstream.js";
 import {
   decodeHtmlEntities,
   escapeSparqlString,
   fetchJson,
   fetchText,
+  HttpStatusError,
   stripHtml,
   uniqueByUrl,
 } from "../util.js";
+
+function isCircuitOpenError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === "CircuitOpenError" || /Circuito abierto/i.test(error.message)
+  );
+}
+
+function networkFailureStatus(error: unknown): number | undefined {
+  if (error instanceof HttpStatusError) return error.status;
+  if (!(error instanceof Error)) return undefined;
+  const m = error.message.match(/HTTP (\d+)/);
+  return m ? Number(m[1]) : undefined;
+}
 
 const SPARQL_ENDPOINT = "https://datos.bcn.cl/sparql";
 const SPARQL_TIMEOUT_MS = Number(process.env.SPARQL_TIMEOUT_MS ?? 10_000);
@@ -99,6 +116,7 @@ function toCitation(b: SparqlBinding): CitationResult | null {
 async function runSparql(
   sparql: string,
   signal?: AbortSignal,
+  countFailure: "terminal" | "none" = "terminal",
 ): Promise<SparqlResponse> {
   const key = `sparql:${sparql.replace(/\s+/g, " ").trim()}`;
   return sparqlCache.getOrSet(key, () =>
@@ -114,15 +132,26 @@ async function runSparql(
       },
       SPARQL_TIMEOUT_MS,
       signal,
+      countFailure,
     ),
   );
 }
 
-function extractLawNumber(query: string): string | undefined {
+/** Exported for unit tests. Years alone are not law numbers. */
+export function extractLawNumber(query: string): string | undefined {
   const dotted = query.match(/\b(\d{1,2})\.(\d{3})\b/);
   if (dotted) return `${dotted[1]}${dotted[2]}`;
+  // Prefer "ley/núm … 19628" so bare years like "reforma 2024" do not short-circuit.
+  const withContext = query.match(
+    /\b(?:ley|l\.?|n[uú]m(?:ero)?\.?|n°|nº|no\.?)\s*(\d{4,6})\b/i,
+  );
+  if (withContext) return withContext[1];
   const plain = query.match(/\b(\d{4,6})\b/);
-  return plain?.[1];
+  if (!plain) return undefined;
+  const n = Number(plain[1]);
+  // Standalone calendar years are almost never Chilean law numbers in queries.
+  if (n >= 1900 && n <= 2099) return undefined;
+  return plain[1];
 }
 
 function searchTerms(query: string): string[] {
@@ -242,6 +271,7 @@ async function searchLeyChileBuscador(
   query: string,
   limit: number,
   signal?: AbortSignal,
+  countFailure: "terminal" | "none" = "terminal",
 ): Promise<CitationResult[]> {
   const url = `https://www.bcn.cl/leychile/consulta/buscador?termino=${encodeURIComponent(query)}`;
   const html = await fetchText(
@@ -254,6 +284,7 @@ async function searchLeyChileBuscador(
     },
     SPARQL_TIMEOUT_MS,
     signal,
+    countFailure,
   );
   return parseLeyChileBuscadorHtml(html, limit);
 }
@@ -268,27 +299,57 @@ export async function searchLegislacion(
     datosAbiertos: "https://datos.bcn.cl/es/",
   };
   const warnings: string[] = [];
+  let networkFailures = 0;
+  let lastNetworkStatus: number | undefined;
+
+  const noteStageNetworkError = (error: unknown): void => {
+    if (isAbortLikeError(error) || isCircuitOpenError(error)) return;
+    networkFailures += 1;
+    lastNetworkStatus = networkFailureStatus(error) ?? lastNetworkStatus;
+  };
 
   const hot = resolveHotNorma(query);
   if (hot) {
-    const byId = await getNorma({ leychileCode: hot.idNorma });
-    if (byId.results.length > 0) {
-      return {
-        ...byId,
-        query,
-        warnings: [
-          ...(byId.warnings ?? []),
-          `Resuelto por catálogo de normas frecuentes: ${hot.label} (idNorma ${hot.idNorma}).`,
-        ],
-      };
+    try {
+      const byId = await getNorma({
+        leychileCode: hot.idNorma,
+        signal: opts.signal,
+        countFailure: "none",
+      });
+      if (byId.results.length > 0) {
+        return {
+          ...byId,
+          query,
+          warnings: [
+            ...(byId.warnings ?? []),
+            `Resuelto por catálogo de normas frecuentes: ${hot.label} (idNorma ${hot.idNorma}).`,
+          ],
+        };
+      }
+    } catch (error) {
+      noteStageNetworkError(error);
+      warnings.push(
+        `Catálogo hot: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
   const lawNumber = extractLawNumber(query);
   if (lawNumber) {
-    const byNumber = await getNorma({ number: lawNumber });
-    if (byNumber.results.length > 0) {
-      return { ...byNumber, query };
+    try {
+      const byNumber = await getNorma({
+        number: lawNumber,
+        signal: opts.signal,
+        countFailure: "none",
+      });
+      if (byNumber.results.length > 0) {
+        return { ...byNumber, query };
+      }
+    } catch (error) {
+      noteStageNetworkError(error);
+      warnings.push(
+        `Lookup por número: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
 
@@ -303,15 +364,18 @@ export async function searchLegislacion(
     };
   }
 
+  // Mid-stage fetches use countFailure:"none"; one terminal count at the end.
   // 1) SPARQL AND on title terms
   let results: CitationResult[] = [];
   try {
     const data = await runSparql(
       buildTitleFilterSparql(terms, "and", limit),
       opts.signal,
+      "none",
     );
     results = bindingsToResults(data.results.bindings, limit);
   } catch (error) {
+    noteStageNetworkError(error);
     warnings.push(
       `SPARQL BCN: ${error instanceof Error ? error.message : String(error)}`,
     );
@@ -323,6 +387,7 @@ export async function searchLegislacion(
       const data = await runSparql(
         buildTitleFilterSparql(terms, "or", limit),
         opts.signal,
+        "none",
       );
       results = bindingsToResults(data.results.bindings, limit);
       if (results.length) {
@@ -331,6 +396,7 @@ export async function searchLegislacion(
         );
       }
     } catch (error) {
+      noteStageNetworkError(error);
       warnings.push(
         `SPARQL OR: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -344,6 +410,7 @@ export async function searchLegislacion(
       const data = await runSparql(
         buildTitleFilterSparql([longest], "and", limit),
         opts.signal,
+        "none",
       );
       results = bindingsToResults(data.results.bindings, limit);
       if (results.length) {
@@ -352,6 +419,7 @@ export async function searchLegislacion(
         );
       }
     } catch (error) {
+      noteStageNetworkError(error);
       warnings.push(
         `SPARQL término único: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -361,13 +429,14 @@ export async function searchLegislacion(
   // 4) LeyChile HTML buscador (free public search)
   if (!results.length) {
     try {
-      results = await searchLeyChileBuscador(query, limit, opts.signal);
+      results = await searchLeyChileBuscador(query, limit, opts.signal, "none");
       if (results.length) {
         warnings.push(
           "Resultados desde el buscador web de LeyChile (metadata); confirma en la URL oficial.",
         );
       }
     } catch (error) {
+      noteStageNetworkError(error);
       warnings.push(
         `Buscador LeyChile: ${error instanceof Error ? error.message : String(error)}`,
       );
@@ -378,6 +447,9 @@ export async function searchLegislacion(
     warnings.push(
       "No se encontraron normas. Prueba el número de ley (p. ej. 19628) o un alias (Código del Trabajo).",
     );
+    if (networkFailures > 0) {
+      noteTerminalUpstreamFailure(SPARQL_ENDPOINT, lastNetworkStatus);
+    }
   }
 
   return {
@@ -393,7 +465,10 @@ export async function getNorma(opts: {
   leychileCode?: string;
   number?: string;
   query?: string;
+  signal?: AbortSignal;
+  countFailure?: "terminal" | "none";
 }): Promise<SearchResponse> {
+  const countFailure = opts.countFailure ?? "terminal";
   if (opts.leychileCode) {
     const code = opts.leychileCode.replace(/\D/g, "");
     const sparql = `
@@ -422,7 +497,7 @@ WHERE {
 LIMIT 5
 `.trim();
 
-    const data = await runSparql(sparql);
+    const data = await runSparql(sparql, opts.signal, countFailure);
     const results = bindingsToResults(data.results.bindings, 5);
 
     return {
@@ -464,7 +539,7 @@ ORDER BY DESC(?date)
 LIMIT 10
 `.trim();
 
-    const data = await runSparql(sparql);
+    const data = await runSparql(sparql, opts.signal, countFailure);
     const results = bindingsToResults(data.results.bindings, 8);
     return {
       query: `número=${opts.number}`,
@@ -481,7 +556,7 @@ LIMIT 10
   }
 
   if (opts.query) {
-    return searchLegislacion(opts.query, 8);
+    return searchLegislacion(opts.query, 8, { signal: opts.signal });
   }
 
   return {
@@ -494,9 +569,10 @@ LIMIT 10
 
 export async function estadoNorma(
   idNorma: string,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<Record<string, unknown>> {
   const code = idNorma.replace(/\D/g, "");
-  const meta = await getNorma({ leychileCode: code });
+  const meta = await getNorma({ leychileCode: code, signal: opts.signal });
   const result = meta.results[0];
   return {
     idNorma: code,
@@ -515,6 +591,7 @@ export async function estadoNorma(
 
 export async function normasRelacionadas(
   idNorma: string,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<SearchResponse> {
   const code = idNorma.replace(/\D/g, "");
   // Query the explicit BCN relationship predicates (modifiesTo, isModifiedBy, recasts,
@@ -552,7 +629,7 @@ LIMIT 30
 `.trim();
 
   try {
-    const data = await runSparql(sparql);
+    const data = await runSparql(sparql, opts.signal);
     const results = bindingsToResults(data.results.bindings, 12);
     if (results.length === 0) {
       return {

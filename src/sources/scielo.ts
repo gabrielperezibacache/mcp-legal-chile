@@ -9,7 +9,9 @@ import {
   journalByIssn,
   type LatamCountry,
 } from "./journalCatalog.js";
-import { fetchJson, politeUrl } from "../util.js";
+import { isAbortLikeError } from "../deadline.js";
+import { noteTerminalUpstreamFailure } from "../upstream.js";
+import { fetchJson, HttpStatusError, politeUrl } from "../util.js";
 import { enrichDoctrineQuery } from "./doctrineShared.js";
 
 const ARTICLEMETA_BASE = "https://articlemeta.scielo.org/api/v1/article/";
@@ -319,6 +321,7 @@ export async function searchSciELOChile(
 export async function obtenerArticuloSciELO(
   pid: string,
   collection?: string,
+  signal?: AbortSignal,
 ): Promise<DoctrineRecord> {
   const code = normalizeSciELOPid(pid);
   const collections = collection ? [collection] : [...ARTICLEMETA_COLLECTIONS];
@@ -329,11 +332,26 @@ export async function obtenerArticuloSciELO(
       const params = new URLSearchParams({ code, collection: col });
       const data = await fetchJson<ArticleMetaResponse>(
         `${ARTICLEMETA_BASE}?${params}`,
+        {},
+        undefined,
+        signal,
+        "none",
       );
       if (data?.code) return fromArticleMeta(data);
     } catch (error) {
       lastError = error;
+      if (isAbortLikeError(error)) throw error;
     }
+  }
+
+  if (
+    lastError &&
+    !isAbortLikeError(lastError) &&
+    !(lastError instanceof Error && lastError.name === "CircuitOpenError")
+  ) {
+    const status =
+      lastError instanceof HttpStatusError ? lastError.status : undefined;
+    noteTerminalUpstreamFailure(ARTICLEMETA_BASE, status);
   }
 
   throw new Error(
@@ -346,6 +364,7 @@ export async function obtenerArticuloSciELO(
 export async function obtenerArticuloPorDoiSciELO(
   doi: string,
   collection?: string,
+  signal?: AbortSignal,
 ): Promise<DoctrineRecord> {
   const norm = doi.replace(/^https?:\/\/doi\.org\//i, "");
   const col = collection ?? inferCollectionFromDoi(norm);
@@ -357,10 +376,15 @@ export async function obtenerArticuloPorDoiSciELO(
       const params = new URLSearchParams({ code: norm, collection: c });
       const data = await fetchJson<ArticleMetaResponse>(
         `${ARTICLEMETA_BASE}?${params}`,
+        {},
+        undefined,
+        signal,
+        "none",
       );
       if (data?.code) return fromArticleMeta(data);
     } catch (error) {
       lastError = error;
+      if (isAbortLikeError(error)) throw error;
     }
   }
 
@@ -368,7 +392,18 @@ export async function obtenerArticuloPorDoiSciELO(
     return obtenerArticuloSciELO(
       norm.replace(/^10\.(?:4067|1590)\/s?/i, "S"),
       col,
+      signal,
     );
+  }
+
+  if (
+    lastError &&
+    !isAbortLikeError(lastError) &&
+    !(lastError instanceof Error && lastError.name === "CircuitOpenError")
+  ) {
+    const status =
+      lastError instanceof HttpStatusError ? lastError.status : undefined;
+    noteTerminalUpstreamFailure(ARTICLEMETA_BASE, status);
   }
 
   throw new Error(

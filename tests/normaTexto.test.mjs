@@ -171,5 +171,37 @@ test("parseIncisosAndLiterales aprovecha los saltos de parrafo para detectar inc
   const texto =
     "Art. 44. La ley distingue tres especies de culpa o descuido.\n\n     Culpa grave, negligencia grave, es la que consiste en no manejar los negocios ajenos con cuidado.\n\n     Culpa leve, descuido leve, es la falta de aquella diligencia y cuidado ordinario.";
   const { incisos } = parseIncisosAndLiterales(texto);
-  assert.ok(incisos.length >= 2);
+  assert.equal(incisos.length, 3);
+  assert.deepEqual(
+    incisos.map((i) => i.label),
+    ["1", "2", "3"],
+  );
+  assert.match(incisos[0].texto, /Art\. 44/);
+  assert.match(incisos[1].texto, /Culpa grave/);
+});
+
+test("parseIncisosAndLiterales usa un solo encabezado Inciso explícito", () => {
+  const texto =
+    "Artículo 10.- Texto introductorio.\nInciso segundo.- El empleador deberá pagar la indemnización correspondiente.";
+  const { incisos } = parseIncisosAndLiterales(texto);
+  assert.equal(incisos.length, 1);
+  assert.match(incisos[0].label, /segundo/i);
+});
+
+test("findIncisoOrLiteral resuelve alias ordinales primero/1", () => {
+  const art = {
+    ...sampleArt,
+    incisos: [
+      { label: "1", texto: "Primer párrafo del artículo." },
+      { label: "segundo", texto: "Segundo párrafo." },
+    ],
+  };
+  assert.equal(
+    findIncisoOrLiteral(art, { inciso: "primero" }).texto,
+    "Primer párrafo del artículo.",
+  );
+  assert.equal(
+    findIncisoOrLiteral(art, { inciso: "2" }).texto,
+    "Segundo párrafo.",
+  );
 });
