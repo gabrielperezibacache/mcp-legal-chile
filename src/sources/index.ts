@@ -28,6 +28,16 @@ import { citarJurisprudencia } from "./jurisQuote.js";
 import { citarTextoLegal } from "./legalQuote.js";
 import { investigarTema } from "./research.js";
 import { remainingMs, runWithDeadline } from "../deadline.js";
+export {
+  buscarCausaPjud,
+  obtenerCausaPjud,
+  PJUD_CAUSAS_PORTAL_URL,
+  PjudCausasCaptchaError,
+  PjudCausasNoResultsError,
+  PjudCausasSolverBudgetError,
+  PjudCausasTimeoutError,
+  type BuscarCausaTipoPersona,
+} from "./pjudCauses.js";
 
 export {
   citarJurisprudencia,

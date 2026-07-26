@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import pkg from "../package.json" with { type: "json" };
+import { registerCausasTools } from "./tools/causas.js";
 import { registerDictamenesTools } from "./tools/dictamenes.js";
 import { registerDoctrinaTools } from "./tools/doctrina.js";
 import { registerJurisprudenciaTools } from "./tools/jurisprudencia.js";
@@ -26,6 +27,7 @@ export function createServer(): McpServer {
   registerJurisprudenciaTools(server);
   registerDoctrinaTools(server);
   registerDictamenesTools(server);
+  registerCausasTools(server);
   registerMetaTools(server, VERSION);
   registerPrompts(server);
 

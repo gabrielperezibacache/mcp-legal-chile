@@ -25,6 +25,8 @@ PJUD no publica API de texto: para citar Corte Suprema / Apelaciones, pega el fa
 Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-host.  
 `CONTACT_EMAIL` activa el *polite pool* de OpenAlex/Crossref (`mailto=`).
 
+> **Excepción — `pjudCauses` (§ [Case-tracking PJUD](#case-tracking-pjud-experimentalno-oficial)):** a diferencia de todo lo anterior, esta función **sí** elude una protección anti-bot (paga un solver de CAPTCHA para pasar el WAF F5/TSPD de PJUD). Está **deshabilitada por defecto** y es responsabilidad de quien la active.
+
 ## Matriz de honestidad (qué trae cada tool)
 
 | Tool | Evidencia | Fuente |
@@ -40,6 +42,7 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | `buscar_dictamenes` / `resolver_dictamen` | Solo enlace | Contraloría (deep link por número) |
 | `buscar_administrativo` | Solo enlace / portal_stub | CMF, Superintendencia de Salud, SUSESO, SEC, SUPERIR (sin API pública) |
 | `investigar_tema` | Pack mixto (parcial OK) | Orquesta lo anterior (~12s) |
+| `buscar_causa_pjud` / `obtener_causa_pjud` | **Siempre `candidate`** (scraping) | Oficina Judicial Virtual PJUD — **experimental/no oficial**, ver [abajo](#case-tracking-pjud-experimentalno-oficial) |
 
 **Integridad (anti-alucinación):** cada resultado lleva `integrity`:
 
@@ -111,9 +114,31 @@ MCP: `http://localhost:3000/mcp`
 | `RATE_LIMIT_PER_MINUTE` | Tope de requests/IP a `/mcp` (default 60) |
 | `HTTP_REQUEST_TIMEOUT_MS` / `HTTP_HEADERS_TIMEOUT_MS` / `HTTP_KEEPALIVE_TIMEOUT_MS` | Timeouts de socket HTTP (defaults 60s/65s/61s) |
 
+## Case-tracking PJUD (experimental/no oficial)
+
+`buscar_causa_pjud` / `obtener_causa_pjud` automatizan la **Consulta Unificada de Causas** de PJUD (Oficina Judicial Virtual) para devolver estado, litigantes y movimientos por RUT/nombre o ROL/RIT/RUC. A diferencia de todo el resto de este proyecto:
+
+- **Elude activamente** el WAF anti-bot (F5/TSPD) de PJUD usando un navegador headless (Playwright) y un **servicio de pago** de resolución de CAPTCHA (2Captcha o CapSolver).
+- No es una API oficial ni endorsada por PJUD: los datos son **siempre `integrity=candidate`**, obtenidos por scraping, y pueden romperse sin aviso si PJUD cambia su HTML/anti-bot.
+- Implica un **riesgo de Términos de Servicio** que asume explícitamente quien habilite la función (ver [`docs/pjud-casetracking-solution.md`](docs/pjud-casetracking-solution.md) para el diseño completo).
+
+**Deshabilitada por defecto** (kill switch): si `PJUD_CAUSAS_ENABLED != 1` o no hay un solver de CAPTCHA configurado, ambas tools degradan a una respuesta tipo `portal_stub` con el link a la Consulta Unificada, nunca fallan en silencio ni inventan datos.
+
+| Variable | Descripción |
+|---|---|
+| `PJUD_CAUSAS_ENABLED` | `1` para habilitar (default: deshabilitado) |
+| `CAPTCHA_SOLVER_PROVIDER` | `2captcha` \| `capsolver` |
+| `CAPTCHA_SOLVER_API_KEY` | API key del solver (cuenta de pago) |
+| `CAPTCHA_SOLVE_TIMEOUT_MS` | Timeout de resolución (default 120s) |
+| `PJUD_SESSION_TTL_MS` | TTL de la cookie de sesión reutilizada (default 25 min), para amortizar el costo del CAPTCHA entre búsquedas |
+| `PJUD_CAUSAS_DAILY_SOLVE_BUDGET` | Tope diario de CAPTCHAs resueltos (control de costo/abuso, default 50) |
+| `PJUD_CAUSAS_CACHE_TTL_MS` / `PJUD_CAUSAS_CACHE_STALE_MS` | Cache de resultados (default 6h / 24h) — el estado de una causa cambia a lo sumo a diario |
+
+`npm run build`/`postinstall` **no** descarga Chromium salvo que `PJUD_CAUSAS_ENABLED=1` esté seteado en tiempo de instalación (ver `scripts/installPlaywright.mjs`), así el build por defecto (p. ej. `render.yaml`) permanece liviano.
+
 ## Deploy
 
-Blueprint: [`render.yaml`](render.yaml) — plan **free**, sin Key Value de pago ni API keys comerciales.
+Blueprint: [`render.yaml`](render.yaml) — plan **free**, sin Key Value de pago ni API keys comerciales. `pjudCauses` está comentado en el blueprint por defecto: requiere una API key de pago (agrégala manualmente en el dashboard de Render si decides habilitarla).
 
 ## Aviso
 

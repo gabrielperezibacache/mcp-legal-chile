@@ -14,6 +14,16 @@ services:
         value: "0.0.0.0"
       - key: WARMUP_ON_BOOT
         value: "1"
+      # pjudCauses (buscar_causa_pjud/obtener_causa_pjud) stays OFF on this
+      # service: Playwright+Chromium doesn't fit the free plan's build time/
+      # image size, and a paid CAPTCHA solver key would need to be added by
+      # hand in the Render dashboard. See docs/pjud-casetracking-solution.md.
+      # - key: PJUD_CAUSAS_ENABLED
+      #   value: "1"
+      # - key: CAPTCHA_SOLVER_PROVIDER
+      #   value: "2captcha"
+      # - key: CAPTCHA_SOLVER_API_KEY
+      #   sync: false
 
   - type: cron
     name: mcp-legal-keepalive
