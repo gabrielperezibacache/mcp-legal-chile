@@ -70,7 +70,7 @@ export function formatLegalExtractionError(
       "Fragmento (inciso/literal) no encontrado en el parseo del artículo.",
       `Detalle: ${message}`,
       `Fuente oficial: ${official}`,
-      "El artículo existe; revisa la numeración del inciso/literal o usa obtener_texto_norma modo=articulo / modo=indice. No inventes el fragmento.",
+      "El artículo existe; revisa la numeración del inciso/literal o usa obtener_texto_norma modo=indice / modo=cuerpo. No inventes el fragmento.",
     ].join("\n");
   }
 
