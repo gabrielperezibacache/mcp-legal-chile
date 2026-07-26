@@ -14,6 +14,7 @@ import {
   parseNormaTexto,
   requireArticulo,
 } from "../sources/normaTexto.js";
+import { CircuitOpenError } from "../upstream.js";
 import { formatResultsJson } from "../util.js";
 import {
   fail,
@@ -22,9 +23,25 @@ import {
   limitSchema,
   okSearch,
   okText,
-  timed,
   timedSearch,
 } from "./helpers.js";
+
+/** Soft-degrade open circuits for BCN metadata tools (no Hermes global cooldown). */
+function softBcnFailure(error: unknown, label: string) {
+  if (error instanceof CircuitOpenError) {
+    const sec = Math.max(1, Math.ceil(error.retryAfterMs / 1000));
+    return okText(
+      [
+        `${label}: circuito ${error.host} temporalmente abierto.`,
+        `Reintenta en ~${sec}s. No inventes normas ni idNorma.`,
+        `Detalle: ${error.message}`,
+      ].join("\n"),
+    );
+  }
+  return fail(
+    `${label}: ${error instanceof Error ? error.message : String(error)}`,
+  );
+}
 
 export function registerLegislacionTools(server: McpServer): void {
   server.registerTool(
@@ -48,9 +65,7 @@ export function registerLegislacionTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error al buscar legislación: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softBcnFailure(error, "Error al buscar legislación");
       }
     },
   );
@@ -70,19 +85,18 @@ export function registerLegislacionTools(server: McpServer): void {
     async ({ id_norma, numero, consulta, formato }) => {
       try {
         return okSearch(
-          await timed("obtener_norma", () =>
+          await timedSearch("obtener_norma", (signal) =>
             getNorma({
               leychileCode: id_norma,
               number: numero,
               query: consulta,
+              signal,
             }),
           ),
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error al obtener norma: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softBcnFailure(error, "Error al obtener norma");
       }
     },
   );
@@ -90,9 +104,9 @@ export function registerLegislacionTools(server: McpServer): void {
   server.registerTool(
     "estado_norma",
     {
-      title: "Estado / vigencia aproximada de una norma",
+      title: "Estado / metadata de publicación de una norma",
       description:
-        "Metadatos de publicación y enlaces a historia LeyChile. Confirma siempre en la fuente oficial.",
+        "Metadatos BCN de publicación + enlaces a historia LeyChile (no determina vigencia jurídica por sí solo). Confirma siempre en la fuente oficial.",
       inputSchema: {
         id_norma: z.string().min(1),
         formato: formatoSchema,
@@ -100,7 +114,9 @@ export function registerLegislacionTools(server: McpServer): void {
     },
     async ({ id_norma, formato }) => {
       try {
-        const data = await timed("estado_norma", () => estadoNorma(id_norma));
+        const data = await timedSearch("estado_norma", (signal) =>
+          estadoNorma(id_norma, { signal }),
+        );
         return okText(
           formato === "json"
             ? formatResultsJson(data)
@@ -112,15 +128,15 @@ export function registerLegislacionTools(server: McpServer): void {
                 `- URL: ${data.url}`,
                 `- Historia: ${data.historiaUrl}`,
                 "",
+                "_Metadata BCN; confirma vigencia en LeyChile._",
+                "",
                 ...(Array.isArray(data.warnings)
                   ? data.warnings.map((w: string) => `- _${w}_`)
                   : []),
               ].join("\n"),
         );
       } catch (error) {
-        return fail(
-          `Error estado_norma: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softBcnFailure(error, "Error estado_norma");
       }
     },
   );
@@ -139,15 +155,13 @@ export function registerLegislacionTools(server: McpServer): void {
     async ({ id_norma, formato }) => {
       try {
         return okSearch(
-          await timed("normas_relacionadas", () =>
-            normasRelacionadas(id_norma),
+          await timedSearch("normas_relacionadas", (signal) =>
+            normasRelacionadas(id_norma, { signal }),
           ),
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error normas_relacionadas: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softBcnFailure(error, "Error normas_relacionadas");
       }
     },
   );
@@ -167,8 +181,12 @@ export function registerLegislacionTools(server: McpServer): void {
     },
     async ({ id_norma, max_chars, modo, formato }) => {
       try {
-        const norma = await timed("obtener_texto_norma", () =>
-          parseNormaTexto(id_norma),
+        const norma = await timedSearch("obtener_texto_norma", (signal) =>
+          parseNormaTexto(id_norma, {
+            signal,
+            timeoutMs: 18_000,
+            retries: 2,
+          }),
         );
         const body = normaToPlainText(norma, { maxChars: max_chars, modo });
         if (formato === "json") {
@@ -221,8 +239,12 @@ export function registerLegislacionTools(server: McpServer): void {
     },
     async ({ id_norma, articulo, formato }) => {
       try {
-        const norma = await timed("obtener_articulo", () =>
-          parseNormaTexto(id_norma),
+        const norma = await timedSearch("obtener_articulo", (signal) =>
+          parseNormaTexto(id_norma, {
+            signal,
+            timeoutMs: 18_000,
+            retries: 2,
+          }),
         );
         const art = requireArticulo(norma, articulo);
         const citation = formatChileanCitation({
@@ -283,8 +305,12 @@ export function registerLegislacionTools(server: McpServer): void {
         if (!inciso && !letra) {
           return fail("Indica inciso o letra para obtener un fragmento.");
         }
-        const norma = await timed("obtener_inciso", () =>
-          parseNormaTexto(id_norma),
+        const norma = await timedSearch("obtener_inciso", (signal) =>
+          parseNormaTexto(id_norma, {
+            signal,
+            timeoutMs: 18_000,
+            retries: 2,
+          }),
         );
         const art = requireArticulo(norma, articulo);
         const frag = findIncisoOrLiteral(art, { inciso, letra });
@@ -328,7 +354,7 @@ export function registerLegislacionTools(server: McpServer): void {
     {
       title: "Formatear cita chilena",
       description:
-        "Genera cadena de cita formal SOLO con identificadores ya recuperados (norma, ROL, dictamen o doctrina). No inventa datos.",
+        "Genera cadena de cita formal SOLO con identificadores ya recuperados (norma, ROL, dictamen o doctrina). No inventa ni verifica datos: marca la cita como no verificada por el MCP.",
       inputSchema: {
         tipo: z.string().optional(),
         numero: z.string().optional(),
@@ -356,8 +382,9 @@ export function registerLegislacionTools(server: McpServer): void {
       const cited = formatChileanCitation(input);
       return okText(
         [
-          `**Cita:** ${cited.citation}`,
+          `**Cita (no verificada por el MCP):** ${cited.citation}`,
           cited.url ? `**URL:** ${cited.url}` : undefined,
+          "- Integridad: `candidate` — formateo local de inputs del cliente; no implica recuperación de fuente.",
           ...cited.notes.map((n) => `- ${n}`),
         ]
           .filter(Boolean)
@@ -382,8 +409,8 @@ export function registerLegislacionTools(server: McpServer): void {
     },
     async ({ id_norma, articulo, inciso, letra, formato }) => {
       try {
-        const quote = await timed("citar_texto_legal", () =>
-          citarTextoLegal({ id_norma, articulo, inciso, letra }),
+        const quote = await timedSearch("citar_texto_legal", (signal) =>
+          citarTextoLegal({ id_norma, articulo, inciso, letra, signal }),
         );
         if (formato === "json") {
           return okText(formatResultsJson({ ...quote, evidence: "full_text" }));

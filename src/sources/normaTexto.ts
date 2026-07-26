@@ -1,6 +1,35 @@
 import { XMLParser } from "fast-xml-parser";
 import { xmlCache } from "../cache.js";
+import { numberToOrdinalWords, ordinalWordsToNumber } from "./considerandos.js";
 import { fetchTextWithRetry, HttpStatusError } from "../util.js";
+
+/** Normalize inciso labels so "1" / "1º" / "primero" match. */
+function normalizeIncisoKey(label: string): string {
+  const raw = label.replace(/[º°]/g, "").trim().toLowerCase();
+  if (/^\d{1,3}$/.test(raw)) return raw;
+  const fromWords = ordinalWordsToNumber(raw);
+  if (fromWords != null) return String(fromWords);
+  return raw;
+}
+
+function incisoLabelsMatch(a: string, b: string): boolean {
+  const ka = normalizeIncisoKey(a);
+  const kb = normalizeIncisoKey(b);
+  if (ka === kb) return true;
+  // Also accept word form of a numeric label (and vice versa).
+  const na = Number(ka);
+  const nb = Number(kb);
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na === nb;
+  if (Number.isFinite(na)) {
+    const words = numberToOrdinalWords(na);
+    if (words && normalizeIncisoKey(words) === kb) return true;
+  }
+  if (Number.isFinite(nb)) {
+    const words = numberToOrdinalWords(nb);
+    if (words && normalizeIncisoKey(words) === ka) return true;
+  }
+  return false;
+}
 
 const NS_STRIP = /\{[^}]+\}/g;
 
@@ -270,15 +299,14 @@ export function parseIncisosAndLiterales(texto: string): {
     }
   } else {
     // Approximate numbered paragraphs as inciso 1, 2, ...
-    // Skip the first block (article header / encabezamiento) but label the
-    // remaining paragraphs starting at "1" (not "2").
+    // In Chilean drafting the first paragraph of the article *is* inciso 1
+    // (often starting with "Art. N.- …"), so include every paragraph.
     const paragraphs = texto
       .split(/\s{2,}|\n+/)
       .map((p) => p.trim())
       .filter((p) => p.length > 40);
     paragraphs.forEach((p, i) => {
-      if (i === 0) return;
-      incisos.push({ label: String(i), texto: p });
+      incisos.push({ label: String(i + 1), texto: p });
     });
   }
 
@@ -337,11 +365,12 @@ export async function fetchNormaXml(
   } = {},
 ): Promise<string> {
   const code = idNorma.replace(/\D/g, "");
-  const blockedUntil = xml429Until.get(code);
-  if (blockedUntil && Date.now() < blockedUntil) {
-    throw new LeyChileRateLimitError(code, blockedUntil - Date.now());
-  }
+  // Check 429 cool-down inside the loader so fresh/stale cache still wins.
   return xmlCache.getOrSet(`xml:${code}`, async () => {
+    const blockedUntil = xml429Until.get(code);
+    if (blockedUntil && Date.now() < blockedUntil) {
+      throw new LeyChileRateLimitError(code, blockedUntil - Date.now());
+    }
     const xmlUrl = `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
     try {
       const xml = await fetchTextWithRetry(
@@ -352,8 +381,8 @@ export async function fetchNormaXml(
             "Accept-Language": "es-CL,es;q=0.9",
           },
         },
-        opts.timeoutMs ?? 60_000,
-        opts.retries ?? 4,
+        opts.timeoutMs ?? 20_000,
+        opts.retries ?? 2,
         opts.signal,
       );
       if (!xml.includes("<Norma") && !xml.includes("normaId")) {
@@ -528,9 +557,8 @@ export function findIncisoOrLiteral(
     );
   }
   if (opts.inciso) {
-    const needle = opts.inciso.replace(/[º°]/g, "").toLowerCase();
-    const inc = art.incisos.find(
-      (i) => i.label.replace(/[º°]/g, "").toLowerCase() === needle,
+    const inc = art.incisos.find((i) =>
+      incisoLabelsMatch(i.label, opts.inciso!),
     );
     if (inc) {
       return { kind: "inciso", texto: inc.texto, label: `inc. ${inc.label}` };

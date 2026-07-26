@@ -92,7 +92,7 @@ export function formatLegalExtractionError(
     `Detalle: ${message}`,
     `Fuente oficial: ${official}`,
     `XML oficial: ${xml}`,
-    "No inventes el contenido: verifica manualmente o usa obtener_texto_norma modo=indice para ver artículos detectados.",
+    "No inventes el contenido: verifica manualmente o usa obtener_texto_norma modo=indice (o modo=cuerpo) para ver artículos detectados.",
   ].join("\n");
 }
 

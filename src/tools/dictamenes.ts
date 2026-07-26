@@ -20,8 +20,8 @@ export function registerDictamenesTools(server: McpServer): void {
   server.registerTool(
     "buscar_dictamenes",
     {
-      title: "Buscar dictamenes",
-      description: "Contraloria / administracion (link_only).",
+      title: "Buscar dictámenes",
+      description: "Contraloría / administración (link_only).",
       inputSchema: {
         consulta: z.string().min(2),
         limite: limitSchema,
@@ -38,7 +38,7 @@ export function registerDictamenesTools(server: McpServer): void {
         );
       } catch (error) {
         return fail(
-          `Error dictamenes: ${error instanceof Error ? error.message : String(error)}`,
+          `Error dictámenes: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     },
@@ -47,8 +47,8 @@ export function registerDictamenesTools(server: McpServer): void {
   server.registerTool(
     "resolver_dictamen",
     {
-      title: "Resolver dictamen por numero",
-      description: "Deep-link / busqueda por numero de dictamen CGR.",
+      title: "Resolver dictamen por número",
+      description: "Deep-link / búsqueda por número de dictamen CGR.",
       inputSchema: {
         numero: z.string().min(1),
         formato: formatoSchema,
@@ -57,7 +57,9 @@ export function registerDictamenesTools(server: McpServer): void {
     async ({ numero, formato }) => {
       try {
         return okSearch(
-          await timed("resolver_dictamen", () => resolverDictamen(numero)),
+          await timedSearch("resolver_dictamen", (signal) =>
+            resolverDictamen(numero, { signal }),
+          ),
           formato,
         );
       } catch (error) {
@@ -71,9 +73,9 @@ export function registerDictamenesTools(server: McpServer): void {
   server.registerTool(
     "buscar_derecho_chileno",
     {
-      title: "Busqueda unificada",
+      title: "Búsqueda unificada",
       description:
-        "Fan-out con presupuesto de tiempo; puede devolver pendingSources.",
+        "Fan-out con presupuesto de tiempo (~8s); puede devolver pendingSources.",
       inputSchema: {
         consulta: z.string().min(2),
         limite_por_fuente: z.number().int().min(1).max(10).default(4),
@@ -83,8 +85,8 @@ export function registerDictamenesTools(server: McpServer): void {
     async ({ consulta, limite_por_fuente, formato }) => {
       try {
         return okSearch(
-          await timed("buscar_derecho_chileno", () =>
-            searchTodas(consulta, limite_por_fuente),
+          await timedSearch("buscar_derecho_chileno", (signal) =>
+            searchTodas(consulta, limite_por_fuente, undefined, signal),
           ),
           formato,
         );
@@ -99,9 +101,9 @@ export function registerDictamenesTools(server: McpServer): void {
   server.registerTool(
     "investigar_tema",
     {
-      title: "Pack de investigacion juridica",
+      title: "Pack de investigación jurídica",
       description:
-        "Orquesta legislacion/jurisprudencia/dictamenes/doctrina en <=~18s (PACK_TOTAL_MS) con resultados parciales OK. No entrega texto integro de fallos PJUD (link_only). Para detalle: citar_texto_legal / obtener_fallo_tc.",
+        "Orquesta legislación/jurisprudencia/dictámenes/doctrina en <=~18s (PACK_TOTAL_MS) con resultados parciales OK. No entrega texto íntegro de fallos PJUD (link_only). Para detalle: citar_texto_legal / obtener_fallo_tc.",
       inputSchema: {
         consulta: z.string().min(2),
         limite_por_fuente: z.number().int().min(1).max(8).default(2),
@@ -109,6 +111,7 @@ export function registerDictamenesTools(server: McpServer): void {
     },
     async ({ consulta, limite_por_fuente }) => {
       try {
+        // Pack has a hard internal PACK_TOTAL_MS budget (~18s).
         const text = await timed("investigar_tema", () =>
           investigarTema(consulta, limite_por_fuente),
         );

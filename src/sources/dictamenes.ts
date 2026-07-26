@@ -110,6 +110,7 @@ export async function searchDictamenes(
 
 export async function resolverDictamen(
   numero: string,
+  opts: { signal?: AbortSignal } = {},
 ): Promise<SearchResponse> {
-  return searchDictamenes(`dictamen ${numero}`, 5);
+  return searchDictamenes(`dictamen ${numero}`, 5, { signal: opts.signal });
 }

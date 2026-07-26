@@ -1,7 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseLeyChileBuscadorHtml } from "../dist/sources/legislacion.js";
+import {
+  extractLawNumber,
+  parseLeyChileBuscadorHtml,
+  searchLegislacion,
+} from "../dist/sources/legislacion.js";
 import { resolveHotNorma } from "../dist/catalog.js";
+import { resetUpstreamForTests, upstreamStatus } from "../dist/upstream.js";
 
 const FIXTURE = `
 <html><body>
@@ -40,4 +45,46 @@ test("catálogo hot sigue resolviendo alias cortos como palabra completa", () =>
   assert.equal(resolveHotNorma("recurso cc")?.idNorma, "172986");
   assert.equal(resolveHotNorma("ct")?.idNorma, "207436");
   assert.equal(resolveHotNorma("texto del cpc")?.idNorma, "22740");
+});
+
+test("extractLawNumber no trata años sueltos como número de ley", () => {
+  assert.equal(extractLawNumber("reforma 2024"), undefined);
+  assert.equal(extractLawNumber("ley 19628"), "19628");
+  assert.equal(extractLawNumber("19.628"), "19628");
+  assert.equal(extractLawNumber("207436"), "207436");
+});
+
+test("searchLegislacion multi-fallback no abre circuito bcn con varios HTTP 500", async () => {
+  resetUpstreamForTests();
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (url) => {
+    calls += 1;
+    const u = String(url);
+    // Fail every BCN/SPARQL/HTML attempt so all stages error.
+    if (u.includes("bcn.cl") || u.includes("datos.bcn")) {
+      return {
+        ok: false,
+        status: 500,
+        headers: { get: () => null },
+        text: async () => "err",
+        json: async () => ({}),
+      };
+    }
+    throw new Error(`unexpected fetch: ${u}`);
+  };
+  try {
+    const res = await searchLegislacion("indemnización por despido laboral", 3);
+    assert.equal(res.results.length, 0);
+    assert.ok(calls >= 2, `esperaba varias etapas, got ${calls}`);
+    // One terminal count max — circuit must stay closed (threshold 3).
+    assert.equal(upstreamStatus().bcn.open, false);
+    assert.ok(
+      upstreamStatus().bcn.failures <= 1,
+      `failures=${upstreamStatus().bcn.failures}`,
+    );
+  } finally {
+    globalThis.fetch = original;
+    resetUpstreamForTests();
+  }
 });

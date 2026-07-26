@@ -52,10 +52,14 @@ export async function searchTodas(
   query: string,
   limitPerSource = 4,
   budgetMs = Number(process.env.UNIFIED_BUDGET_MS ?? 8000),
+  parentSignal?: AbortSignal,
 ): Promise<SearchResponse> {
   const started = Date.now();
   const pendingSources: string[] = [];
   const controller = new AbortController();
+  const onParentAbort = () => controller.abort();
+  parentSignal?.addEventListener("abort", onParentAbort);
+  if (parentSignal?.aborted) controller.abort();
   const timer = setTimeout(() => controller.abort(), budgetMs);
 
   const run = async <T>(
@@ -114,5 +118,6 @@ export async function searchTodas(
     };
   } finally {
     clearTimeout(timer);
+    parentSignal?.removeEventListener("abort", onParentAbort);
   }
 }

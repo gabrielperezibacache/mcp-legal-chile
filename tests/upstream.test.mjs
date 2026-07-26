@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  isUpstreamCoolingDown,
   noteTerminalUpstreamFailure,
   resetUpstreamForTests,
   upstreamHostKey,
@@ -116,6 +117,25 @@ test("upstreamHostKey clasifica Diario Oficial en su propio circuito", () => {
     ),
     "diariooficial",
   );
+});
+
+test("isUpstreamCoolingDown refleja circuito abierto", () => {
+  resetUpstreamForTests();
+  assert.equal(isUpstreamCoolingDown("leychile"), false);
+  noteTerminalUpstreamFailure(
+    "https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=1",
+    500,
+  );
+  noteTerminalUpstreamFailure(
+    "https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=1",
+    500,
+  );
+  noteTerminalUpstreamFailure(
+    "https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=1",
+    500,
+  );
+  assert.equal(upstreamStatus().leychile.open, true);
+  assert.equal(isUpstreamCoolingDown("leychile"), true);
 });
 
 test("websearch permite concurrencia limitada sin serializar la operación completa", async () => {

@@ -15,7 +15,6 @@ import {
   limitSchema,
   okSearch,
   okText,
-  timed,
   timedSearch,
 } from "./helpers.js";
 
@@ -37,19 +36,20 @@ export function registerDoctrinaTools(server: McpServer): void {
           .enum(["chl", "scl", "arg", "mex", "per", "col"])
           .optional()
           .describe(
-            "Coleccion ArticleMeta SciELO (chl, scl, arg, mex, per, col)",
+            "Colección ArticleMeta SciELO (chl, scl, arg, mex, per, col)",
           ),
         formato: formatoSchema,
       },
     },
     async ({ doi, openalex_id, scielo_pid, collection, formato }) => {
       try {
-        const d = await timed("obtener_doctrina", () =>
+        const d = await timedSearch("obtener_doctrina", (signal) =>
           obtenerDoctrina({
             doi,
             openAlexId: openalex_id,
             scieloPid: scielo_pid,
             collection,
+            signal,
           }),
         );
         if (formato === "json") return okText(formatResultsJson(d));
@@ -65,9 +65,9 @@ export function registerDoctrinaTools(server: McpServer): void {
   server.registerTool(
     "buscar_doctrina",
     {
-      title: "Buscar doctrina juridica chilena",
+      title: "Buscar doctrina jurídica chilena",
       description:
-        "Doctrina OA gratis: OpenAlex (catalogo revistas CL) + DOAJ + Crossref + enrich ArticleMeta SciELO. Citas Chile/APA.",
+        "Doctrina OA gratis: OpenAlex (catálogo revistas CL) + DOAJ + Crossref + enrich ArticleMeta SciELO. Citas Chile/APA.",
       inputSchema: {
         consulta: z.string().min(2),
         limite: limitSchema,
@@ -96,9 +96,9 @@ export function registerDoctrinaTools(server: McpServer): void {
   server.registerTool(
     "buscar_doctrina_latam",
     {
-      title: "Buscar doctrina juridica LATAM",
+      title: "Buscar doctrina jurídica LATAM",
       description:
-        "Doctrina LATAM OA: catalogo ISSN + OpenAlex + DOAJ por pais (PE/BR/AR/MX/CO).",
+        "Doctrina LATAM OA: catálogo ISSN + OpenAlex + DOAJ por país (PE/BR/AR/MX/CO).",
       inputSchema: {
         consulta: z.string().min(2),
         pais: latamPaisSchema,
@@ -108,8 +108,8 @@ export function registerDoctrinaTools(server: McpServer): void {
     },
     async ({ consulta, pais, limite, formato }) => {
       try {
-        const data = await timed("buscar_doctrina_latam", () =>
-          searchDoctrinaLatam(consulta, limite, pais),
+        const data = await timedSearch("buscar_doctrina_latam", (signal) =>
+          searchDoctrinaLatam(consulta, limite, pais, { signal }),
         );
         if (formato === "json") {
           return okSearch(data, "json");

@@ -107,9 +107,22 @@ app.get("/metrics", async (_req, res) => {
 
 /** Keep-alive / warmup ping for free→starter cron. */
 app.get("/warmup", async (_req, res) => {
+  if (isUpstreamCoolingDown("leychile")) {
+    res.json({
+      ok: true,
+      skipped: true,
+      reason: "leychile_cooling_down",
+      warmed: [],
+    });
+    return;
+  }
   const ids = HOT_IDS_FOR_WARMUP.slice(0, 3);
   const results: Array<{ id: string; ok: boolean; error?: string }> = [];
   for (const id of ids) {
+    if (isUpstreamCoolingDown("leychile")) {
+      results.push({ id, ok: false, error: "leychile_cooling_down" });
+      break;
+    }
     try {
       await parseNormaTexto(id);
       results.push({ id, ok: true });

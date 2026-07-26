@@ -115,7 +115,7 @@ const CIRCUIT_OPEN_MS = Number(process.env.CIRCUIT_OPEN_MS ?? 90_000);
 const CIRCUIT_THRESHOLD = Number(process.env.CIRCUIT_THRESHOLD ?? 3);
 
 async function acquireSlot(key: HostKey): Promise<void> {
-  if (active[key] >= MAX_CONCURRENT[key]) {
+  while (active[key] >= MAX_CONCURRENT[key]) {
     await new Promise<void>((resolve) => waiters[key].push(resolve));
   }
   active[key] += 1;
@@ -123,6 +123,7 @@ async function acquireSlot(key: HostKey): Promise<void> {
 
 function releaseSlot(key: HostKey): void {
   active[key] = Math.max(0, active[key] - 1);
+  // Wake waiters one by one; each re-checks capacity in acquireSlot's while loop.
   waiters[key].shift()?.();
 }
 

@@ -223,10 +223,17 @@ async function searchDuckDuckGoLite(
 /** Free web search via Yahoo HTML, then DuckDuckGo HTML/lite fallback (best-effort). */
 export async function searchWeb(
   query: string,
-  opts: { site?: string; limit?: number; signal?: AbortSignal } = {},
+  opts: {
+    site?: string;
+    limit?: number;
+    signal?: AbortSignal;
+    /** Default terminal; pass "none" when the caller aggregates many site searches. */
+    countFailure?: "terminal" | "none";
+  } = {},
 ): Promise<WebHit[]> {
   throwIfAborted(opts.signal);
   const limit = opts.limit ?? 8;
+  const countFailure = opts.countFailure ?? "terminal";
   const q = opts.site ? `${query} site:${opts.site}` : query;
   const failKey = `webfail:${q}`;
   if (isFailCached(failKey)) {
@@ -243,7 +250,8 @@ export async function searchWeb(
     // (status 202 + anomaly-modal) instead of results.
     //
     // Backends use countFailure:"none" so Yahoo retry + DDG + lite cannot
-    // open the circuit in one call; we count one terminal failure at the end.
+    // open the circuit in one call; we count one terminal failure at the end
+    // unless the orchestrator disabled counting.
     try {
       const hits = await searchYahoo(q, limit, opts.signal);
       if (hits.length) return hits;
@@ -265,7 +273,7 @@ export async function searchWeb(
           );
         } catch (liteError) {
           markFail(failKey);
-          if (!isAbortLikeError(liteError)) {
+          if (countFailure === "terminal" && !isAbortLikeError(liteError)) {
             const status =
               liteError instanceof HttpStatusError
                 ? liteError.status

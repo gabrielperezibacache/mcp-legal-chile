@@ -19,7 +19,7 @@ export const WEB_SEARCH_USER_AGENT =
 
 /** Polite bot UA for services that accept structured bot identifiers. */
 export const BOT_USER_AGENT =
-  process.env.WEB_SEARCH_USER_AGENT ??
+  process.env.BOT_USER_AGENT ??
   `Mozilla/5.0 (compatible; MCP-Legal-Chile/${pkg.version}; +https://mcp-legal-chile.onrender.com)`;
 
 /** Contact for OpenAlex/Crossref polite pools (higher rate limits). */
