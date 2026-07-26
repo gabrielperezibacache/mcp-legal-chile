@@ -10,7 +10,7 @@ import { logger, newRequestId } from "./logger.js";
 import { metrics } from "./metrics.js";
 import { createServer, VERSION } from "./server.js";
 import { parseNormaTexto } from "./sources/normaTexto.js";
-import { upstreamStatus } from "./upstream.js";
+import { isUpstreamCoolingDown, upstreamStatus } from "./upstream.js";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 
@@ -273,9 +273,20 @@ app.use(
 
 async function warmupHotNormas(): Promise<void> {
   if (process.env.WARMUP_ON_BOOT === "0") return;
+  if (isUpstreamCoolingDown("leychile")) {
+    logger.info("warmup_skipped", { reason: "leychile_cooling_down" });
+    return;
+  }
   const ids = HOT_IDS_FOR_WARMUP.slice(0, 4);
   logger.info("warmup_start", { ids });
   for (const id of ids) {
+    if (isUpstreamCoolingDown("leychile")) {
+      logger.info("warmup_aborted", {
+        reason: "leychile_cooling_down",
+        remaining: ids.slice(ids.indexOf(id)),
+      });
+      break;
+    }
     try {
       await parseNormaTexto(id);
       logger.info("warmup_ok", { id });

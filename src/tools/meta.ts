@@ -23,7 +23,7 @@ export function registerMetaTools(server: McpServer, version: string): void {
             obtener_inciso: "verified / full_text heuristico",
             citar_texto_legal: "verified / full_text + cita formal",
             citar_jurisprudencia:
-              "verified (full_text) si TC indexado o texto pegado; metadata (resumen ficha) si el ROL no esta en el indice de texto TC; rechaza considerando inexistente",
+              "verified (full_text) si TC indexado o texto pegado; candidate (resumen ficha / evidence=metadata) si el ROL no esta en el indice de texto TC; rechaza considerando inexistente",
             buscar_legislacion: "candidate / metadata BCN",
             normas_relacionadas:
               "candidate / metadata BCN (predicados estructurados: modifica/modificada por/refunde/rectificada por/regulada por/concuerda con)",
@@ -32,7 +32,7 @@ export function registerMetaTools(server: McpServer, version: string): void {
             buscar_tc: "candidate / TC API metadata + PDF",
             resolver_rol: "candidate / portales + TC",
             obtener_fallo_tc:
-              "verified extracto + indice considerandos; metadata (solo ficha/doctrina) si el ROL no esta en el indice de texto TC",
+              "verified extracto + indice considerandos; candidate (solo ficha/doctrina, evidence=metadata) si el ROL no esta en el indice de texto TC",
             buscar_dictamenes: "candidate / link_only (verificar CGR)",
             buscar_doctrina: "candidate / metadata OA (no vinculante)",
             buscar_doctrina_latam: "candidate / metadata OA LATAM",

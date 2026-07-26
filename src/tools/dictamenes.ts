@@ -101,7 +101,7 @@ export function registerDictamenesTools(server: McpServer): void {
     {
       title: "Pack de investigacion juridica",
       description:
-        "Orquesta legislacion/jurisprudencia/dictamenes/doctrina en <=~12s con resultados parciales OK. No entrega texto integro de fallos PJUD (link_only). Para detalle: citar_texto_legal / obtener_fallo_tc.",
+        "Orquesta legislacion/jurisprudencia/dictamenes/doctrina en <=~18s (PACK_TOTAL_MS) con resultados parciales OK. No entrega texto integro de fallos PJUD (link_only). Para detalle: citar_texto_legal / obtener_fallo_tc.",
       inputSchema: {
         consulta: z.string().min(2),
         limite_por_fuente: z.number().int().min(1).max(8).default(2),

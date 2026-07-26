@@ -1,6 +1,6 @@
 {
   "name": "mcp-legal-chile",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "description": "Conector MCP libre y gratuito del derecho chileno: legislación, jurisprudencia, doctrina y dictámenes con citas verificables.",
   "type": "module",
   "main": "dist/index.js",
@@ -17,7 +17,7 @@
     "lint:fix": "eslint src --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "npm run build && node --test tests/**/*.test.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
   "engines": {

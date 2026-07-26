@@ -249,10 +249,19 @@ export function parseIncisosAndLiterales(texto: string): {
   const incisoHeadingRe =
     /(?:^|[.\-–—]\s+|\n\s*)(Inciso\s+(?:[Pp]rimero|[Ss]egundo|[Tt]ercero|[Cc]uarto|[Qq]uinto|[Ss]exto|[Ss]éptimo|[Oo]ctavo|[Nn]oveno|[Dd]écimo|[Úú]nico|[Ff]inal|\d{1,3}\s*[°ºo]?)\s*[.\-–—:])/g;
   const headingMatches = [...texto.matchAll(incisoHeadingRe)];
-  if (headingMatches.length > 1) {
+  if (headingMatches.length >= 1) {
     for (let i = 0; i < headingMatches.length; i++) {
-      const start = headingMatches[i].index ?? 0;
-      const end = headingMatches[i + 1]?.index ?? texto.length;
+      const match = headingMatches[i];
+      // Prefer the start of the "Inciso …" capture so prefixes like ".\n" do not
+      // break label extraction when slicing the chunk.
+      const captured = match[1] ?? "Inciso";
+      const rawStart = match.index ?? 0;
+      const start = rawStart + match[0].indexOf(captured);
+      const next = headingMatches[i + 1];
+      const nextCaptured = next?.[1] ?? "Inciso";
+      const end = next
+        ? (next.index ?? texto.length) + next[0].indexOf(nextCaptured)
+        : texto.length;
       const chunk = texto.slice(start, end).trim();
       const labelMatch = chunk.match(/^Inciso\s+([A-Za-zÁÉÍÓÚáéíóúñÑ0-9º°]+)/i);
       if (labelMatch) {
@@ -261,13 +270,15 @@ export function parseIncisosAndLiterales(texto: string): {
     }
   } else {
     // Approximate numbered paragraphs as inciso 1, 2, ...
+    // Skip the first block (article header / encabezamiento) but label the
+    // remaining paragraphs starting at "1" (not "2").
     const paragraphs = texto
       .split(/\s{2,}|\n+/)
       .map((p) => p.trim())
       .filter((p) => p.length > 40);
     paragraphs.forEach((p, i) => {
       if (i === 0) return;
-      incisos.push({ label: String(i + 1), texto: p });
+      incisos.push({ label: String(i), texto: p });
     });
   }
 

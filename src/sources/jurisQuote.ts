@@ -203,7 +203,8 @@ function buildQuoteMarkdown(opts: {
   competencia?: string;
   resultado?: string;
   evidenceLabel: string;
-  integrityLevel?: "verified" | "metadata";
+  /** Honesty-matrix integrity: verified | candidate (ficha/metadata). */
+  integrityLevel?: "verified" | "candidate";
   url?: string;
   pdfUrl?: string;
   blockquote: string;
@@ -368,7 +369,7 @@ function quoteFromContent(opts: {
     competencia: opts.competencia,
     resultado: opts.resultado,
     evidenceLabel: opts.evidenceLabel,
-    integrityLevel: opts.evidence === "metadata" ? "metadata" : "verified",
+    integrityLevel: opts.evidence === "metadata" ? "candidate" : "verified",
     url: opts.url,
     pdfUrl: opts.pdfUrl,
     blockquote,

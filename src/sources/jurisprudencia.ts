@@ -685,7 +685,7 @@ export async function obtenerFalloTc(
       ? `- **Considerandos detectados:** ${considerandos.length}`
       : undefined,
     fichaOnly
-      ? `- **Integridad:** \`metadata\` — no indexado en el buscador de texto íntegro del TC; se muestra el resumen oficial de doctrina (ficha). Usa el PDF oficial para el cuerpo completo.`
+      ? `- **Integridad:** \`candidate\` — no indexado en el buscador de texto íntegro del TC; se muestra el resumen oficial de doctrina (ficha, evidence=metadata). Usa el PDF oficial para el cuerpo completo.`
       : `- **Integridad:** \`verified\` (extracto) / verificar PDF para citas procesales`,
     `- **Ficha:** ${url}`,
     pdfUrl ? `- **PDF oficial:** ${pdfUrl}` : undefined,
