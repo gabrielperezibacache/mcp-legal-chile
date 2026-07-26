@@ -165,6 +165,8 @@ function labelForSource(
       return "Doctrina académica";
     case "dictamenes":
       return "Dictámenes / administración";
+    case "administrativo":
+      return "Superintendencias / administrativo";
     case "todas":
       return "Búsqueda unificada";
     default:

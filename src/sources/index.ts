@@ -8,6 +8,7 @@ export {
 } from "./doctrina.js";
 import { searchDoctrina } from "./doctrina.js";
 import { searchDictamenes, resolverDictamen } from "./dictamenes.js";
+import { searchAdministrativo } from "./administrativo.js";
 import {
   obtenerFalloTc,
   resolverRol,
@@ -36,6 +37,7 @@ export {
   resolverDictamen,
   resolverRol,
   resolveRolToMarkdown,
+  searchAdministrativo,
   searchDictamenes,
   searchJurisprudencia,
   searchTribunalConstitucional,
@@ -78,7 +80,7 @@ export async function searchTodas(
   };
 
   try {
-    const [legislacion, jurisprudencia, doctrina, dictamenes] =
+    const [legislacion, jurisprudencia, doctrina, dictamenes, administrativo] =
       await Promise.all([
         run("legislacion", (signal) =>
           searchLegislacion(query, limitPerSource, { signal }),
@@ -92,6 +94,9 @@ export async function searchTodas(
         run("dictamenes", (signal) =>
           searchDictamenes(query, limitPerSource, { signal }),
         ),
+        run("administrativo", (signal) =>
+          searchAdministrativo(query, limitPerSource, { signal }),
+        ),
       ]);
 
     const responses = [
@@ -99,6 +104,7 @@ export async function searchTodas(
       jurisprudencia,
       doctrina,
       dictamenes,
+      administrativo,
     ].filter((r): r is SearchResponse => r != null);
 
     return {

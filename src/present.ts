@@ -66,6 +66,9 @@ export function nextStepFor(result: CitationResult): string | undefined {
   if (result.source === "dictamenes") {
     return "Siguiente: abre la URL CGR y confirma el texto íntegro antes de citar.";
   }
+  if (result.source === "administrativo") {
+    return "Siguiente: abre el portal de la superintendencia y confirma el texto íntegro antes de citar.";
+  }
   if (result.source === "doctrina") {
     return "Siguiente: usa la cita Chile/APA arriba; contrastar norma con LeyChile (`citar_texto_legal`).";
   }
@@ -105,6 +108,11 @@ export function nextStepsForSearch(opts: {
     if (opts.source === "dictamenes") {
       steps.push(
         "Confirma el dictamen en el portal CGR; no afirmes el contenido desde el título.",
+      );
+    }
+    if (opts.source === "administrativo") {
+      steps.push(
+        "Confirma la norma/circular/dictamen en el portal de la superintendencia; no afirmes el contenido desde el título.",
       );
     }
   }

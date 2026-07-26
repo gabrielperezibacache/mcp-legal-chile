@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   investigarTema,
   resolverDictamen,
+  searchAdministrativo,
   searchDictamenes,
   searchTodas,
 } from "../sources/index.js";
@@ -39,6 +40,34 @@ export function registerDictamenesTools(server: McpServer): void {
       } catch (error) {
         return fail(
           `Error dictamenes: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "buscar_administrativo",
+    {
+      title: "Buscar normativa administrativa (superintendencias)",
+      description:
+        "CMF, Superintendencia de Salud, SUSESO, SEC, SUPERIR y otros organismos sin API pública (portal_stub + link_only).",
+      inputSchema: {
+        consulta: z.string().min(2),
+        limite: limitSchema,
+        formato: formatoSchema,
+      },
+    },
+    async ({ consulta, limite, formato }) => {
+      try {
+        return okSearch(
+          await timedSearch("buscar_administrativo", (signal) =>
+            searchAdministrativo(consulta, limite, { signal }),
+          ),
+          formato,
+        );
+      } catch (error) {
+        return fail(
+          `Error administrativo: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     },

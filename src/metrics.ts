@@ -96,6 +96,7 @@ export const metrics = {
       "crossref",
       "scielo",
       "websearch",
+      "pjudCauses",
       "tool",
     ] as const;
     return {

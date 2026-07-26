@@ -9,6 +9,7 @@ export type HostKey =
   | "scielo"
   | "contraloria"
   | "pjud"
+  | "pjudCauses"
   | "diariooficial"
   | "websearch";
 
@@ -31,6 +32,7 @@ const circuits: Record<HostKey, CircuitState> = {
   scielo: makeCircuit(),
   contraloria: makeCircuit(),
   pjud: makeCircuit(),
+  pjudCauses: makeCircuit(),
   diariooficial: makeCircuit(),
   websearch: makeCircuit(),
 };
@@ -44,6 +46,7 @@ const startQueues: Record<HostKey, Promise<unknown>> = {
   scielo: Promise.resolve(),
   contraloria: Promise.resolve(),
   pjud: Promise.resolve(),
+  pjudCauses: Promise.resolve(),
   diariooficial: Promise.resolve(),
   websearch: Promise.resolve(),
 };
@@ -57,6 +60,7 @@ const active: Record<HostKey, number> = {
   scielo: 0,
   contraloria: 0,
   pjud: 0,
+  pjudCauses: 0,
   diariooficial: 0,
   websearch: 0,
 };
@@ -70,6 +74,7 @@ const waiters: Record<HostKey, Array<() => void>> = {
   scielo: [],
   contraloria: [],
   pjud: [],
+  pjudCauses: [],
   diariooficial: [],
   websearch: [],
 };
@@ -86,6 +91,10 @@ const MAX_CONCURRENT: Record<HostKey, number> = {
   // generic `websearch` circuit with DuckDuckGo/Yahoo scraping.
   contraloria: Number(process.env.CONTRALORIA_MAX_CONCURRENT ?? 2),
   pjud: Number(process.env.PJUD_MAX_CONCURRENT ?? 1),
+  // PJUD case-tracking drives a real headless-browser session (Playwright) per
+  // call — kept to a single concurrent session by default (see
+  // docs/pjud-casetracking-solution.md §9).
+  pjudCauses: Number(process.env.PJUD_CAUSAS_MAX_CONCURRENT ?? 1),
   diariooficial: Number(process.env.DIARIO_OFICIAL_MAX_CONCURRENT ?? 2),
   websearch: Number(process.env.WEBSEARCH_MAX_CONCURRENT ?? 3),
 };
@@ -99,6 +108,9 @@ const MIN_INTERVAL_MS: Record<HostKey, number> = {
   scielo: Number(process.env.SCIELO_MIN_INTERVAL_MS ?? 200),
   contraloria: Number(process.env.CONTRALORIA_MIN_INTERVAL_MS ?? 300),
   pjud: Number(process.env.PJUD_MIN_INTERVAL_MS ?? 500),
+  // Longer minimum spacing: each request may launch/reuse a real browser
+  // session and, on cache miss, pay for a CAPTCHA solve.
+  pjudCauses: Number(process.env.PJUD_CAUSAS_MIN_INTERVAL_MS ?? 2000),
   diariooficial: Number(process.env.DIARIO_OFICIAL_MIN_INTERVAL_MS ?? 300),
   websearch: Number(process.env.WEBSEARCH_MIN_INTERVAL_MS ?? 100),
 };
@@ -146,6 +158,11 @@ export function upstreamHostKey(url: string): HostKey {
     // block doesn't starve (or get starved by) DuckDuckGo/Yahoo scraping.
     if (host.includes("contraloria.cl") || host.includes("dipres.gob.cl"))
       return "contraloria";
+    // Oficina Judicial Virtual (case-tracking scraper) gets its own isolated
+    // bucket: a browser-session-driven, CAPTCHA-gated flow with a very
+    // different cost/concurrency profile than the link-only PJUD lookups
+    // used by buscar_jurisprudencia/resolver_rol.
+    if (host.includes("oficinajudicialvirtual.pjud.cl")) return "pjudCauses";
     if (host.includes("pjud.cl")) return "pjud";
     if (host.includes("diariooficial.interior.gob.cl")) return "diariooficial";
   } catch {

@@ -4,7 +4,7 @@ Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps 
 
 **Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.12.0
+**Versión:** 1.14.0
 
 ## Proyecto libre
 
@@ -16,7 +16,7 @@ Este MCP usa **solo fuentes públicas sin costo de API**:
 | Tribunal Constitucional | Fallos TC con texto y considerandos |
 | OpenAlex + DOAJ + Crossref | Doctrina académica OA |
 | SciELO ArticleMeta | Enrich de artículos SciELO (PDF/HTML) por DOI/PID |
-| Portales oficiales (PJUD, CGR, etc.) | Deep links |
+| Portales oficiales (PJUD, CGR, superintendencias, etc.) | Deep links |
 | DuckDuckGo HTML/lite | Búsqueda web best-effort (sin claves) |
 
 **No** se usan APIs comerciales (Serper, Brave, vLex, etc.).  
@@ -38,6 +38,7 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | `resolver_rol` | Enlaces + candidatos | TC + portales |
 | `obtener_fallo_tc` | Extracto + índice de considerandos | API gratuita TC |
 | `buscar_dictamenes` / `resolver_dictamen` | Solo enlace | Contraloría (deep link por número) |
+| `buscar_administrativo` | Solo enlace / portal_stub | CMF, Superintendencia de Salud, SUSESO, SEC, SUPERIR (sin API pública) |
 | `investigar_tema` | Pack mixto (parcial OK) | Orquesta lo anterior (~12s) |
 
 **Integridad (anti-alucinación):** cada resultado lleva `integrity`:

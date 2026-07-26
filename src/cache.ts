@@ -200,3 +200,12 @@ export const xmlCache = new TtlCache(
   14 * 24 * 60 * 60_000,
 );
 export const webCache = new TtlCache(60 * 60_000, 3 * 60 * 60_000);
+/**
+ * Case status (PJUD Oficina Judicial Virtual) changes at most daily, so a
+ * short TTL avoids re-scraping (and re-solving CAPTCHAs for) the same
+ * RUT/ROL/RIT repeatedly. See docs/pjud-casetracking-solution.md §7.
+ */
+export const pjudCauseCache = new TtlCache(
+  Number(process.env.PJUD_CAUSAS_CACHE_TTL_MS ?? 6 * 60 * 60_000),
+  Number(process.env.PJUD_CAUSAS_CACHE_STALE_MS ?? 24 * 60 * 60_000),
+);
