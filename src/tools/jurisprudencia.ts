@@ -8,6 +8,7 @@ import {
   searchJurisprudencia,
   searchTribunalConstitucional,
 } from "../sources/index.js";
+import { indiceConsiderandos } from "../sources/indiceConsiderandos.js";
 import { formatResultsJson } from "../util.js";
 import {
   fail,
@@ -248,11 +249,40 @@ export function registerJurisprudenciaTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "indice_considerandos",
+    {
+      title: "Índice de considerandos de un fallo pegado",
+      description:
+        "Parsea un fallo pegado (PJUD/TC) y lista considerandos detectados, con ranking opcional por consulta. Luego usa `pegar_fallo_pjud` con el número elegido.",
+      inputSchema: {
+        texto: z
+          .string()
+          .min(80)
+          .describe("Texto íntegro o sección de considerandos"),
+        rol: z.string().optional(),
+        consulta: z
+          .string()
+          .optional()
+          .describe("Tema para rankear considerandos"),
+      },
+    },
+    async ({ texto, rol, consulta }) => {
+      try {
+        return okText(indiceConsiderandos({ texto, rol, consulta }));
+      } catch (error) {
+        return fail(
+          `Error indice_considerandos: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
     "pegar_fallo_pjud",
     {
       title: "Pegar fallo PJUD y citar",
       description:
-        "Flujo de estudio para CS/CA/juzgados: requiere texto pegado del Portal Unificado / OJV. Parsea considerandos, cita formal + blockquote. Rechaza considerando inexistente. Equivale a citar_jurisprudencia con texto obligatorio.",
+        "Flujo de estudio para CS/CA/juzgados: requiere texto pegado del Portal Unificado / OJV. Parsea considerandos, cita formal + blockquote. Rechaza considerando inexistente. Para explorar el índice antes de citar usa `indice_considerandos`.",
       inputSchema: {
         rol: z.string().min(3).describe("ROL, ej. 12345-2020"),
         texto: z
@@ -274,12 +304,7 @@ export function registerJurisprudenciaTools(server: McpServer): void {
           .string()
           .optional()
           .describe("Palabras clave para elegir el considerando"),
-        max_chars: z
-          .number()
-          .int()
-          .min(200)
-          .max(8000)
-          .default(2500),
+        max_chars: z.number().int().min(200).max(8000).default(2500),
         formato: formatoSchema,
       },
     },

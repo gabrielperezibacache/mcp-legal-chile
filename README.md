@@ -4,7 +4,7 @@ Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps 
 
 **Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.15.0
+**Versión:** 1.16.0
 
 ## Proyecto libre
 
@@ -43,8 +43,12 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | `buscar_administrativo` | Solo enlace / portal_stub | CMF, Superintendencia de Salud, SUSESO, SEC, SUPERIR (sin API pública) |
 | `investigar_tema` | Pack mixto (parcial OK) | Orquesta lo anterior (~18s); cierra con Verificado / Por verificar / Portales / Próximos pasos |
 | `pegar_fallo_pjud` | **Texto + considerando** | Fallo PJUD/CS/CA pegado (sin API abierta) |
+| `indice_considerandos` | Índice del texto pegado | Lista/ranking de considerandos antes de citar |
 | `citar_dictamen_pegado` | **Texto + cita** | Dictamen CGR pegado desde el portal |
 | `flujo_estudio` | Plan de tools (local) | Router memo / escrito / seguimiento_causa / cita_rapida / consulta |
+| `asesorar` | Plan + pack | Orquesta `flujo_estudio` e `investigar_tema` (memo/escrito/consulta) |
+| `plantilla_escrito` | Esqueleto local | Demanda/recurso por materia (sin inventar citas) |
+| `minuta_cliente` | Esqueleto local | Aviso/resumen/solicitud de antecedentes al cliente |
 | `buscar_causa_pjud` / `obtener_causa_pjud` | **Siempre `candidate`** (scraping) | Oficina Judicial Virtual PJUD — **experimental/no oficial**, ver [abajo](#case-tracking-pjud-experimentalno-oficial) |
 
 **Integridad (anti-alucinación):** cada resultado lleva `integrity`:
@@ -61,11 +65,12 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 
 ### Cómo usarlo sin quedarse corto
 
-1. Empieza con `flujo_estudio` (elige modo: memo / escrito / seguimiento_causa / cita_rapida) o `investigar_tema` (mapa rápido).
+1. Empieza con `asesorar` (plan + pack) o `flujo_estudio` / `investigar_tema`.
 2. Extrae texto con `citar_texto_legal`, `obtener_articulo`, `obtener_fallo_tc` o `citar_jurisprudencia`.
-3. Fallos PJUD: abre el [portal unificado](https://www.pjud.cl/portal-unificado-sentencias), copia el texto y pásalo a `pegar_fallo_pjud` (o `citar_jurisprudencia` con `texto`).
+3. Fallos PJUD: abre el [portal unificado](https://www.pjud.cl/portal-unificado-sentencias), copia el texto → `indice_considerandos` y/o `pegar_fallo_pjud`.
 4. Dictámenes CGR: `resolver_dictamen` (enlace) → pega el cuerpo en `citar_dictamen_pegado`.
-5. Prompts del servidor: `flujo_estudio`, `pegar_fallo_pjud`, `pegar_dictamen_cgr`, checklists (protección, laboral, ejecutivo, familia, contencioso-administrativo, nulidad penal).
+5. Entregables: `plantilla_escrito` (borrador) o `minuta_cliente` (aviso al cliente).
+6. Prompts: `flujo_estudio`, `plantilla_escrito`, `minuta_cliente`, `pegar_fallo_pjud`, `pegar_dictamen_cgr`, checklists por materia.
 
 ## SLOs (objetivos P95)
 

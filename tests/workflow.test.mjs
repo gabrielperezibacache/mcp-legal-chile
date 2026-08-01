@@ -56,10 +56,16 @@ test("citarDictamenPegado rechaza texto corto", () => {
 });
 
 test("catálogo hot resuelve normas frecuentes de estudio", () => {
-  assert.equal(resolveHotNorma("código orgánico de tribunales")?.idNorma, "25563");
+  assert.equal(
+    resolveHotNorma("código orgánico de tribunales")?.idNorma,
+    "25563",
+  );
   assert.equal(resolveHotNorma("cot")?.idNorma, "25563");
   assert.equal(resolveHotNorma("ley 19.880")?.idNorma, "210676");
-  assert.equal(resolveHotNorma("procedimiento administrativo")?.idNorma, "210676");
+  assert.equal(
+    resolveHotNorma("procedimiento administrativo")?.idNorma,
+    "210676",
+  );
   assert.equal(resolveHotNorma("18.575")?.idNorma, "29967");
   assert.equal(resolveHotNorma("código tributario")?.idNorma, "6374");
   assert.equal(resolveHotNorma("tribunales de familia")?.idNorma, "229557");

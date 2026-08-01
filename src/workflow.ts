@@ -114,12 +114,22 @@ export function planFlujoEstudio(opts: {
       );
   }
 
-  lines.push("", "## Formato de salida", ...deliverableSections(modo).map((s) => `- ${s}`));
   lines.push(
     "",
-    "## Prompts útiles del servidor",
+    "## Formato de salida",
+    ...deliverableSections(modo).map((s) => `- ${s}`),
+  );
+  lines.push(
+    "",
+    "## Prompts / tools útiles",
+    "- `asesorar` (plan + pack), `plantilla_escrito`, `minuta_cliente`, `indice_considerandos`.",
     "- `memo_asesoria`, `lista_prueba_normativa`, `checklist_*`, `pegar_fallo_pjud`, `pegar_dictamen_cgr`.",
   );
 
   return lines.join("\n");
+}
+
+/** Modes where running investigar_tema as first step is usually useful. */
+export function shouldRunPack(modo: FlujoModo): boolean {
+  return modo === "memo" || modo === "escrito" || modo === "consulta";
 }

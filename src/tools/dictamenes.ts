@@ -119,12 +119,7 @@ export function registerDictamenesTools(server: McpServer): void {
           .string()
           .optional()
           .describe("Default: Contraloría General de la República"),
-        max_chars: z
-          .number()
-          .int()
-          .min(200)
-          .max(8000)
-          .default(2500),
+        max_chars: z.number().int().min(200).max(8000).default(2500),
         formato: formatoSchema,
       },
     },

@@ -109,26 +109,15 @@ export const HOT_NORMAS: Array<{
       "lbpa",
     ],
     idNorma: "210676",
-    label:
-      "Ley N° 19.880 sobre Bases de los Procedimientos Administrativos",
+    label: "Ley N° 19.880 sobre Bases de los Procedimientos Administrativos",
   },
   {
-    aliases: [
-      "19947",
-      "19.947",
-      "ley de matrimonio civil",
-      "matrimonio civil",
-    ],
+    aliases: ["19947", "19.947", "ley de matrimonio civil", "matrimonio civil"],
     idNorma: "225128",
     label: "Ley N° 19.947 de Matrimonio Civil",
   },
   {
-    aliases: [
-      "19968",
-      "19.968",
-      "tribunales de familia",
-      "ley de familia",
-    ],
+    aliases: ["19968", "19.968", "tribunales de familia", "ley de familia"],
     idNorma: "229557",
     label: "Ley N° 19.968 que Crea los Tribunales de Familia",
   },

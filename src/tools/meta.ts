@@ -40,6 +40,8 @@ export function registerMetaTools(server: McpServer, version: string): void {
               "verified (full_text) si TC indexado o texto pegado; candidate (resumen ficha / evidence=metadata) si el ROL no está en el índice de texto TC; rechaza considerando inexistente",
             pegar_fallo_pjud:
               "verified sobre texto aportado (PJUD/CS/CA); requiere texto pegado; rechaza considerando inexistente",
+            indice_considerandos:
+              "verified sobre texto aportado — índice/ranking de considerandos sin citar aún",
             buscar_dictamenes: "candidate / link_only (verificar CGR)",
             resolver_dictamen: "candidate / link_only por número CGR",
             citar_dictamen_pegado:
@@ -52,6 +54,12 @@ export function registerMetaTools(server: McpServer, version: string): void {
               "pack mixto parcial OK (~18s); secciones Verificado/Por verificar/Portales + Próximos pasos; no inventa vacíos",
             flujo_estudio:
               "metadata local — plan de tools por modo (memo/escrito/seguimiento_causa/cita_rapida/consulta)",
+            asesorar:
+              "plan local + pack investigar_tema (modos memo/escrito/consulta); no inventa vacíos",
+            plantilla_escrito:
+              "metadata local — esqueleto de escrito; contenido debe venir de tools verified",
+            minuta_cliente:
+              "metadata local — estructura de mensaje al cliente a partir del contexto aportado",
             buscar_doctrina: "candidate / metadata OA (no vinculante)",
             buscar_doctrina_latam: "candidate / metadata OA LATAM",
             obtener_doctrina: "candidate / ArticleMeta SciELO-DOI-OpenAlex",

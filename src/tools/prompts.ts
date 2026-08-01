@@ -35,10 +35,10 @@ export function registerPrompts(server: McpServer): void {
               rol_o_rit ? `ROL/RIT: ${rol_o_rit}` : undefined,
               numero_dictamen ? `Dictamen: ${numero_dictamen}` : undefined,
               "",
-              "1) Llama la tool `flujo_estudio` con el mismo modo/consulta para obtener el plan de tools.",
+              "1) Prefiere la tool `asesorar` (plan + pack) o `flujo_estudio` (solo plan).",
               "2) Ejecuta los pasos del plan en orden. No inventes fuentes.",
-              "3) Entrega el formato indicado por el plan (IRAC, escrito, resumen de causa o cita).",
-              "Fallos PJUD → `pegar_fallo_pjud`. Dictámenes con texto → `citar_dictamen_pegado`.",
+              "3) Entrega el formato indicado (IRAC, escrito vía `plantilla_escrito`, resumen vía `minuta_cliente`, o cita).",
+              "Fallos PJUD → `indice_considerandos` / `pegar_fallo_pjud`. Dictámenes → `citar_dictamen_pegado`.",
             ]
               .filter((x): x is string => Boolean(x))
               .join("\n"),
@@ -148,7 +148,9 @@ export function registerPrompts(server: McpServer): void {
               `ROL: ${rol}`,
               tribunal ? `Tribunal: ${tribunal}` : undefined,
               considerando ? `Considerando pedido: ${considerando}` : undefined,
-              consulta ? `Tema para elegir considerando: ${consulta}` : undefined,
+              consulta
+                ? `Tema para elegir considerando: ${consulta}`
+                : undefined,
               "",
               "Llama `pegar_fallo_pjud` (o `citar_jurisprudencia` con texto) pasando el texto íntegro siguiente.",
               "Devuelve cita formal + blockquote + integrity. Si el considerando no existe, reporta la lista detectada.",
@@ -350,6 +352,88 @@ export function registerPrompts(server: McpServer): void {
               "3) buscar_jurisprudencia / pegar_fallo_pjud para CS/CA",
               "4) Checklist: causal invocada, petitorio, puntos de hecho vs derecho — sin inventar ROL ni considerandos",
             ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "plantilla_escrito",
+    {
+      title: "Plantilla de escrito chileno",
+      description:
+        "Esqueleto de demanda/recurso según tipo, rellenado solo con tools verified.",
+      argsSchema: {
+        tipo: z.enum([
+          "demanda_laboral",
+          "recurso_proteccion",
+          "juicio_ejecutivo",
+          "contencioso_administrativo",
+          "recurso_nulidad_penal",
+          "escrito_familia",
+          "generico",
+        ]),
+        materia: z.string().optional(),
+        hechos: z.string().optional(),
+      },
+    },
+    ({ tipo, materia, hechos }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Usa plantilla_escrito tipo=${tipo}.`,
+              materia ? `Materia: ${materia}` : undefined,
+              hechos ? `Hechos: ${hechos}` : undefined,
+              "Luego investiga con asesorar/investigar_tema, baja a texto oficial y rellena la plantilla.",
+              "Marca [POR VERIFICAR] lo no verified. No inventes montos ni ROL.",
+            ]
+              .filter((x): x is string => Boolean(x))
+              .join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "minuta_cliente",
+    {
+      title: "Minuta o aviso al cliente",
+      description:
+        "Borrador de mensaje al cliente desde contexto aportado (causa o hallazgos).",
+      argsSchema: {
+        tipo: z.enum([
+          "actualizacion_causa",
+          "resumen_asesoria",
+          "solicitud_antecedentes",
+        ]),
+        contexto: z.string(),
+        rol_o_rit: z.string().optional(),
+        caratulado: z.string().optional(),
+      },
+    },
+    ({ tipo, contexto, rol_o_rit, caratulado }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Llama minuta_cliente tipo=${tipo}.`,
+              rol_o_rit ? `ROL/RIT: ${rol_o_rit}` : undefined,
+              caratulado ? `Caratulado: ${caratulado}` : undefined,
+              "Redacta el mensaje final siguiendo la estructura. No inventes movimientos ni resoluciones.",
+              "Si el contexto es PJUD, integrity=candidate.",
+              "",
+              "--- CONTEXTO ---",
+              contexto,
+            ]
+              .filter((x): x is string => Boolean(x))
+              .join("\n"),
           },
         },
       ],

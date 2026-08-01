@@ -227,7 +227,7 @@ export async function investigarTema(
           packController.signal,
         );
         const art = findArticulo(norma, articulo);
-          if (art) {
+        if (art) {
           const quote = truncateArticleQuote(art.texto, articleQuoteChars);
           const artLines = [
             `**${norma.tipo ?? "Norma"} ${norma.numero}, art. ${art.numero}** — ${norma.titulo}`,
@@ -430,7 +430,7 @@ export async function investigarTema(
       "- Confirma vigencia en LeyChile antes de asesorar.",
       "- Fallos PJUD: pega el texto en `pegar_fallo_pjud` (o `citar_jurisprudencia` con `texto`).",
       "- Dictámenes CGR: pega el texto en `citar_dictamen_pegado` tras `resolver_dictamen`.",
-      "- Para estructurar el entregable: `flujo_estudio` (modos memo/escrito/seguimiento_causa/cita_rapida).",
+      "- Para estructurar el entregable: `asesorar` / `flujo_estudio` / `plantilla_escrito` / `minuta_cliente`.",
     ];
     sections.push(...uniq(nextSteps).slice(0, 8), ...defaultNext);
 
