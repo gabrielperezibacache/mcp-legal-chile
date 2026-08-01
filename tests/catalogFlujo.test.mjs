@@ -4,8 +4,11 @@ import {
   REQUIRED_STUDY_TOOLS,
   formatCatalogoFlujos,
   inferModoFromConsulta,
+  inferTipoEscrito,
   listaAntecedentes,
+  listaPruebaNormativa,
   mapEscritoToAntecedentes,
+  resolveFlujoModo,
 } from "../dist/catalogFlujo.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -48,6 +51,37 @@ test("inferModoFromConsulta detecta seguimiento y escrito", () => {
     "escrito",
   );
   assert.equal(inferModoFromConsulta("memo IRAC sobre arriendo"), "memo");
+});
+
+test("resolveFlujoModo auto infiere y modo explícito no", () => {
+  const auto = resolveFlujoModo("auto", "demanda por despido injustificado");
+  assert.equal(auto.modo, "escrito");
+  assert.equal(auto.inferred, true);
+  const fixed = resolveFlujoModo("memo", "demanda por despido");
+  assert.equal(fixed.modo, "memo");
+  assert.equal(fixed.inferred, false);
+});
+
+test("inferTipoEscrito detecta tutela y protección", () => {
+  assert.equal(
+    inferTipoEscrito("tutela laboral por discriminación"),
+    "tutela_laboral",
+  );
+  assert.equal(
+    inferTipoEscrito("recurso de protección contra municipalidad"),
+    "recurso_proteccion",
+  );
+  assert.equal(inferTipoEscrito("despido injustificado"), "demanda_laboral");
+});
+
+test("listaPruebaNormativa sugiere artículos CT", () => {
+  const md = listaPruebaNormativa({
+    tema: "despido injustificado artículo 162",
+  });
+  assert.match(md, /207436/);
+  assert.match(md, /Art\. 162/);
+  assert.match(md, /obtener_articulo/);
+  assert.match(md, /demanda_laboral/);
 });
 
 test("tools de catálogo v1.18 están registrados en workflow.ts", () => {

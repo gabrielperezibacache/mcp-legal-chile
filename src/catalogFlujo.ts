@@ -2,6 +2,7 @@
  * Discoverable catalog of lawyer workflows + client-document checklists.
  */
 
+import { HOT_NORMAS, resolveHotNorma } from "./catalog.js";
 import { ESCRITO_TIPOS, type EscritoTipo } from "./templates.js";
 import { FLUJO_MODOS, type FlujoModo } from "./workflow.js";
 
@@ -42,12 +43,13 @@ export const FLUJO_CATALOG: FlujoCatalogEntry[] = [
     cuando: "Vas a redactar y necesitas estructura + normas verified.",
     tools: [
       "preparar_entregable",
+      "lista_prueba_normativa",
       "plantilla_escrito",
       "asesorar",
       "pegar_fallo_pjud",
       "anexo_citas",
     ],
-    prompts: ["plantilla_escrito", "checklist_*"],
+    prompts: ["plantilla_escrito", "checklist_*", "checklist_tutela_laboral"],
     resource: "legalchile://guia/escrito",
   },
   {
@@ -97,12 +99,15 @@ export const REQUIRED_STUDY_TOOLS = [
   "anexo_citas",
   "comparar_actuaciones",
   "lista_antecedentes",
+  "lista_prueba_normativa",
   "catalogo_flujos",
   "pegar_fallo_pjud",
   "indice_considerandos",
   "citar_dictamen_pegado",
   "investigar_tema",
 ] as const;
+
+export const FLUJO_MODOS_CON_AUTO = [...FLUJO_MODOS, "auto"] as const;
 
 export function formatCatalogoFlujos(): string {
   const lines = [
@@ -278,6 +283,7 @@ export function mapEscritoToAntecedentes(
 ): AntecedenteMateria {
   switch (tipo) {
     case "demanda_laboral":
+    case "tutela_laboral":
       return "laboral";
     case "recurso_proteccion":
       return "proteccion";
@@ -307,4 +313,190 @@ export function inferModoFromConsulta(consulta: string): FlujoModo {
   }
   if (/memo|irac|asesor/.test(q)) return "memo";
   return "consulta";
+}
+
+export function resolveFlujoModo(
+  modo: FlujoModo | "auto",
+  consulta: string,
+): { modo: FlujoModo; inferred: boolean } {
+  if (modo !== "auto") return { modo, inferred: false };
+  return { modo: inferModoFromConsulta(consulta), inferred: true };
+}
+
+export function inferTipoEscrito(consulta: string): EscritoTipo {
+  const q = consulta.toLowerCase();
+  if (/tutela\s+laboral|tutela\s+de\s+derechos?\s+fundamentales/.test(q)) {
+    return "tutela_laboral";
+  }
+  if (/despido|finiquito|laboral|fuero|cotizaci/.test(q)) {
+    return "demanda_laboral";
+  }
+  if (/protecci[oó]n|art\.?\s*20|garant[ií]a\s+constitucional/.test(q)) {
+    return "recurso_proteccion";
+  }
+  if (/ejecutiv|pagar[eé]|cheque|mandato\s+ejecutivo/.test(q)) {
+    return "juicio_ejecutivo";
+  }
+  if (/alimento|cuidado\s+personal|familia|divorcio|visitas/.test(q)) {
+    return "escrito_familia";
+  }
+  if (/nulidad\s+penal|recurso\s+de\s+nulidad/.test(q)) {
+    return "recurso_nulidad_penal";
+  }
+  if (/casaci[oó]n/.test(q)) return "recurso_casacion";
+  if (/dictamen|contralor|19\.?880|acto\s+administrativo/.test(q)) {
+    return "contencioso_administrativo";
+  }
+  return "generico";
+}
+
+function extractArticuloMentions(consulta: string): string[] {
+  const out: string[] = [];
+  const re =
+    /art[ií]culos?\s*([0-9]+(?:\s*bis)?(?:\s*[,y]\s*[0-9]+(?:\s*bis)?)*)/gi;
+  for (const m of consulta.matchAll(re)) {
+    const chunk = m[1] ?? "";
+    for (const part of chunk.split(/\s*[,y]\s*/i)) {
+      const n = part.replace(/\s+/g, " ").trim();
+      if (n && !out.includes(n)) out.push(n);
+    }
+  }
+  const single = consulta.match(/art[ií]culo\s*([0-9]+(?:\s*bis)?)/i);
+  if (single?.[1]) {
+    const n = single[1].replace(/\s+/g, " ");
+    if (!out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+/** Suggested articles to fetch before drafting — not asserted legal content. */
+const SUGGESTED_ARTICLES: Partial<
+  Record<
+    EscritoTipo | AntecedenteMateria,
+    Array<{ articulo: string; nota: string }>
+  >
+> = {
+  demanda_laboral: [
+    { articulo: "160", nota: "Causales de despido (verificar aplicables)" },
+    { articulo: "161", nota: "Necesidades de la empresa / desahucio" },
+    { articulo: "162", nota: "Formalidades del despido" },
+    { articulo: "163", nota: "Indemnización por años de servicio" },
+    { articulo: "168", nota: "Recurso judicial / nulidad del despido" },
+  ],
+  tutela_laboral: [
+    {
+      articulo: "485",
+      nota: "Tutela de derechos fundamentales (verificar vigencia/texto)",
+    },
+    { articulo: "486", nota: "Procedimiento de tutela (verificar)" },
+    { articulo: "489", nota: "Indemnización / medidas (verificar)" },
+  ],
+  recurso_proteccion: [
+    { articulo: "19", nota: "Garantías constitucionales involucradas" },
+    { articulo: "20", nota: "Recurso de protección" },
+  ],
+  juicio_ejecutivo: [
+    {
+      articulo: "434",
+      nota: "Títulos ejecutivos (verificar numeración vigente)",
+    },
+    { articulo: "459", nota: "Oposición / excepciones (verificar)" },
+  ],
+  contencioso_administrativo: [
+    { articulo: "53", nota: "Invalidación (Ley 19.880 — verificar)" },
+    { articulo: "59", nota: "Plazos de impugnación (verificar)" },
+  ],
+  laboral: [
+    { articulo: "162", nota: "Formalidades del despido" },
+    { articulo: "168", nota: "Impugnación del despido" },
+  ],
+  proteccion: [
+    { articulo: "19", nota: "Garantías" },
+    { articulo: "20", nota: "Protección" },
+  ],
+};
+
+export function listaPruebaNormativa(opts: {
+  tema: string;
+  tipo_escrito?: EscritoTipo;
+}): string {
+  const tema = opts.tema.trim();
+  const tipo = opts.tipo_escrito ?? inferTipoEscrito(tema);
+  const hot = resolveHotNorma(tema);
+  const mentioned = extractArticuloMentions(tema);
+
+  // Pick hot norma: explicit resolve, else map from escrito tipo.
+  let idNorma = hot?.idNorma;
+  let label = hot?.label;
+  if (!idNorma) {
+    const fallback: Partial<Record<EscritoTipo, string>> = {
+      demanda_laboral: "207436",
+      tutela_laboral: "207436",
+      recurso_proteccion: "242302",
+      juicio_ejecutivo: "22740",
+      escrito_familia: "229557",
+      recurso_nulidad_penal: "176595",
+      recurso_casacion: "22740",
+      contencioso_administrativo: "210676",
+    };
+    idNorma = fallback[tipo];
+    label = HOT_NORMAS.find((n) => n.idNorma === idNorma)?.label ?? label;
+  }
+
+  const suggested =
+    SUGGESTED_ARTICLES[tipo] ??
+    SUGGESTED_ARTICLES[mapEscritoToAntecedentes(tipo)] ??
+    [];
+
+  const articles = new Map<string, string>();
+  for (const a of mentioned) articles.set(a, "Mencionado en la consulta");
+  for (const s of suggested) {
+    if (!articles.has(s.articulo)) articles.set(s.articulo, s.nota);
+  }
+
+  const lines: string[] = [
+    "# Lista de prueba normativa",
+    "",
+    `**Tema:** ${tema}`,
+    `**Tipo inferido de escrito:** \`${tipo}\`${opts.tipo_escrito ? "" : " _(auto)_"}`,
+    idNorma
+      ? `**Norma candidata:** ${label ?? "Norma"} — idNorma \`${idNorma}\``
+      : "**Norma candidata:** _(usa `buscar_legislacion`)_",
+    "",
+    "## Artículos a obtener antes de redactar",
+    "_No cites el contenido hasta llamar `obtener_articulo` / `citar_texto_legal`._",
+    "",
+  ];
+
+  if (!articles.size) {
+    lines.push(
+      "- Sin artículos sugeridos. Corre `investigar_tema` y vuelve a listar.",
+    );
+  } else {
+    let i = 1;
+    for (const [art, nota] of articles) {
+      const tool = idNorma
+        ? `\`obtener_articulo\` id_norma=${idNorma} articulo=${art}`
+        : `\`buscar_legislacion\` + \`obtener_articulo\` articulo=${art}`;
+      lines.push(`${i}. **Art. ${art}** — ${nota}`);
+      lines.push(`   - ${tool}`);
+      i += 1;
+    }
+  }
+
+  lines.push(
+    "",
+    "## Otras normas frecuentes a contrastar",
+    ...HOT_NORMAS.slice(0, 8).map(
+      (n) =>
+        `- ${n.label} (\`idNorma ${n.idNorma}\`) — aliases: ${n.aliases.slice(0, 3).join(", ")}`,
+    ),
+    "",
+    "## Siguiente paso",
+    "- Obtén el texto verified de cada artículo listado.",
+    "- Jurisprudencia: `buscar_jurisprudencia` / `pegar_fallo_pjud`.",
+    "- Arma el cuerpo con `plantilla_escrito` / `preparar_entregable` + `anexo_citas`.",
+  );
+
+  return lines.join("\n");
 }

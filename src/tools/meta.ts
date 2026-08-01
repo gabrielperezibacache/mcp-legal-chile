@@ -72,8 +72,10 @@ export function registerMetaTools(server: McpServer, version: string): void {
             catalogo_flujos: "metadata local — mapa de flujos y tools",
             lista_antecedentes:
               "metadata local — checklist de documentos a pedir al cliente",
+            lista_prueba_normativa:
+              "metadata local — idNorma/artículos sugeridos a obtener (no afirma texto)",
             preparar_entregable:
-              "plan + plantilla + antecedentes + pack investigar_tema (memo/escrito)",
+              "plan + plantilla + prueba normativa + antecedentes + pack (memo/escrito; modo auto)",
             buscar_doctrina: "candidate / metadata OA (no vinculante)",
             buscar_doctrina_latam: "candidate / metadata OA LATAM",
             obtener_doctrina: "candidate / ArticleMeta SciELO-DOI-OpenAlex",

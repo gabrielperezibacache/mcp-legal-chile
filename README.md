@@ -4,7 +4,7 @@ Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps 
 
 **Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.18.0
+**Versión:** 1.19.0
 
 ## Proyecto libre
 
@@ -54,7 +54,8 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | `comparar_actuaciones` | Diff local | Nuevas / desaparecidas entre dos snapshots de movimientos |
 | `catalogo_flujos` | Catálogo local | Mapa de flujos + tools + resources |
 | `lista_antecedentes` | Checklist local | Documentos a pedir al cliente por materia |
-| `preparar_entregable` | Plan + plantilla + pack | Inicio orquestado de memo/escrito |
+| `lista_prueba_normativa` | Checklist local | Artículos/idNorma a obtener antes de redactar |
+| `preparar_entregable` | Plan + plantilla + pack | Inicio orquestado de memo/escrito (`modo=auto`) |
 | `buscar_causa_pjud` / `obtener_causa_pjud` | **Siempre `candidate`** (scraping) | Oficina Judicial Virtual PJUD — **experimental/no oficial**, ver [abajo](#case-tracking-pjud-experimentalno-oficial) |
 
 **Integridad (anti-alucinación):** cada resultado lleva `integrity`:
@@ -71,7 +72,7 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 
 ### Cómo usarlo sin quedarse corto
 
-1. Empieza con `catalogo_flujos` o `preparar_entregable` / `asesorar`.
+1. Empieza con `catalogo_flujos` o `preparar_entregable` / `asesorar` (`modo=auto` infiere el flujo).
 2. Extrae texto con `citar_texto_legal`, `obtener_articulo`, `obtener_fallo_tc` o `citar_jurisprudencia`.
 3. Fallos PJUD: abre el [portal unificado](https://www.pjud.cl/portal-unificado-sentencias), copia el texto → `indice_considerandos` y/o `pegar_fallo_pjud`.
 4. Dictámenes CGR: `resolver_dictamen` (enlace) → pega el cuerpo en `citar_dictamen_pegado`.

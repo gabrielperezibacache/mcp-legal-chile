@@ -11,13 +11,14 @@ export function registerPrompts(server: McpServer): void {
       argsSchema: {
         modo: z
           .enum([
+            "auto",
             "memo",
             "escrito",
             "seguimiento_causa",
             "cita_rapida",
             "consulta",
           ])
-          .describe("Tipo de entregable del abogado"),
+          .describe("Tipo de entregable del abogado (`auto` para inferir)"),
         consulta: z.string(),
         rol_o_rit: z.string().optional(),
         numero_dictamen: z.string().optional(),
@@ -243,10 +244,36 @@ export function registerPrompts(server: McpServer): void {
             type: "text",
             text: [
               `Materia laboral: ${materia}`,
-              "1) buscar_legislacion Codigo del Trabajo / obtener_articulo (idNorma 207436)",
+              "1) lista_prueba_normativa + obtener_articulo Codigo del Trabajo (idNorma 207436)",
               "2) buscar_jurisprudencia con filtros; PJUD -> pegar_fallo_pjud",
               "3) Listar pretensiones y normas citables con URL",
               "No inventes ROL ni montos.",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "checklist_tutela_laboral",
+    {
+      title: "Checklist tutela laboral",
+      description: "Derechos fundamentales en el trabajo — CT + CPR.",
+      argsSchema: { hechos: z.string() },
+    },
+    ({ hechos }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Hechos de tutela laboral: ${hechos}`,
+              "1) lista_prueba_normativa tipo_escrito=tutela_laboral (CT idNorma 207436)",
+              "2) CPR garantías afectadas via obtener_articulo idNorma 242302",
+              "3) buscar_jurisprudencia / pegar_fallo_pjud — sin inventar ROL",
+              "4) plantilla_escrito tipo tutela_laboral; pretensiones sin montos inventados",
             ].join("\n"),
           },
         },
@@ -394,6 +421,7 @@ export function registerPrompts(server: McpServer): void {
       argsSchema: {
         tipo: z.enum([
           "demanda_laboral",
+          "tutela_laboral",
           "recurso_proteccion",
           "juicio_ejecutivo",
           "contencioso_administrativo",
@@ -481,7 +509,7 @@ export function registerPrompts(server: McpServer): void {
           role: "user",
           content: {
             type: "text",
-            text: `Para redactar sobre "${tema}", usa investigar_tema y produce una checklist de idNorma+articulo a obtener_articulo antes de escribir.`,
+            text: `Para redactar sobre "${tema}", llama la tool lista_prueba_normativa y luego obtener_articulo de cada ítem antes de escribir. No inventes el texto de los artículos.`,
           },
         },
       ],

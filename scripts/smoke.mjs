@@ -79,6 +79,7 @@ async function main() {
       "preparar_entregable",
       "catalogo_flujos",
       "lista_antecedentes",
+      "lista_prueba_normativa",
       "pegar_fallo_pjud",
       "citar_dictamen_pegado",
       "anexo_citas",

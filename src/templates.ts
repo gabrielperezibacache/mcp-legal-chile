@@ -5,6 +5,7 @@
 
 export const ESCRITO_TIPOS = [
   "demanda_laboral",
+  "tutela_laboral",
   "recurso_proteccion",
   "juicio_ejecutivo",
   "contencioso_administrativo",
@@ -73,6 +74,23 @@ export function plantillaEscrito(opts: {
         "### V. Petitorio",
         "### VI. Prueba ofrecida",
         "### VII. Qué falta verificar",
+      );
+      break;
+    case "tutela_laboral":
+      lines.push(
+        "1. `lista_prueba_normativa` + `obtener_articulo` CT (idNorma 207436) procedimiento de tutela",
+        "2. CPR garantías involucradas (idNorma 242302) si se invocan derechos fundamentales",
+        "3. `buscar_jurisprudencia` / `pegar_fallo_pjud`",
+        "",
+        "## Estructura",
+        "### I. Tribunal del Trabajo y partes",
+        "### II. Hechos lesivos y conducta del empleador (solo aportados)",
+        "### III. Derecho fundamental afectado (CPR + CT tutela — blockquotes verified)",
+        "### IV. Procedimiento de tutela (artículos CT verified)",
+        "### V. Jurisprudencia citables vs `[POR VERIFICAR]`",
+        "### VI. Pretensiones (restitución, indemnización — sin montos inventados)",
+        "### VII. Petitorio y prueba",
+        "### VIII. Qué falta verificar",
       );
       break;
     case "recurso_proteccion":

@@ -2,9 +2,13 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   ANTECEDENTE_MATERIAS,
+  FLUJO_MODOS_CON_AUTO,
   formatCatalogoFlujos,
+  inferTipoEscrito,
   listaAntecedentes,
+  listaPruebaNormativa,
   mapEscritoToAntecedentes,
+  resolveFlujoModo,
 } from "../catalogFlujo.js";
 import { investigarTema } from "../sources/research.js";
 import {
@@ -19,7 +23,7 @@ import {
   minutaCliente,
   plantillaEscrito,
 } from "../templates.js";
-import { FLUJO_MODOS, planFlujoEstudio, shouldRunPack } from "../workflow.js";
+import { planFlujoEstudio, shouldRunPack } from "../workflow.js";
 import { fail, okText, timed } from "./helpers.js";
 
 const citaAnexoSchema = z.object({
@@ -62,29 +66,55 @@ export function registerWorkflowTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "lista_prueba_normativa",
+    {
+      title: "Lista de prueba normativa (artículos a obtener)",
+      description:
+        "Sugiere idNorma + artículos a pedir con `obtener_articulo` antes de redactar, según el tema (hot catalog + artículos típicos). No afirma el texto de los artículos.",
+      inputSchema: {
+        tema: z.string().min(2),
+        tipo_escrito: z.enum(ESCRITO_TIPOS).optional(),
+      },
+    },
+    async ({ tema, tipo_escrito }) =>
+      okText(listaPruebaNormativa({ tema, tipo_escrito })),
+  );
+
+  server.registerTool(
     "flujo_estudio",
     {
       title: "Router de flujo de trabajo para abogados",
       description:
-        "Devuelve el plan de tools MCP según el entregable (memo, escrito, seguimiento_causa, cita_rapida, consulta). No consulta fuentes externas. Para plan + pack usa `asesorar`.",
+        "Devuelve el plan de tools MCP según el entregable. Usa modo `auto` para inferir desde la consulta. Para plan + pack usa `asesorar`.",
       inputSchema: {
-        modo: z.enum(FLUJO_MODOS).describe("Tipo de entregable"),
+        modo: z
+          .enum(FLUJO_MODOS_CON_AUTO)
+          .default("auto")
+          .describe("Tipo de entregable o `auto`"),
         consulta: z.string().min(2),
         rol: z.string().optional().describe("ROL de causa o fallo, si aplica"),
         rit: z.string().optional().describe("RIT de causa, si aplica"),
         numero_dictamen: z.string().optional(),
       },
     },
-    async ({ modo, consulta, rol, rit, numero_dictamen }) =>
-      okText(
-        planFlujoEstudio({
-          modo,
-          consulta,
-          rol,
-          rit,
-          numero_dictamen,
-        }),
-      ),
+    async ({ modo, consulta, rol, rit, numero_dictamen }) => {
+      const resolved = resolveFlujoModo(modo, consulta);
+      const plan = planFlujoEstudio({
+        modo: resolved.modo,
+        consulta,
+        rol,
+        rit,
+        numero_dictamen,
+      });
+      if (!resolved.inferred) return okText(plan);
+      return okText(
+        [
+          `_Modo inferido automáticamente: \`${resolved.modo}\`._`,
+          "",
+          plan,
+        ].join("\n"),
+      );
+    },
   );
 
   server.registerTool(
@@ -92,9 +122,9 @@ export function registerWorkflowTools(server: McpServer): void {
     {
       title: "Asesorar: plan de flujo + pack inicial",
       description:
-        "Orquesta el flujo de estudio: devuelve el plan (`flujo_estudio`) y, por defecto en modos memo/escrito/consulta, ejecuta `investigar_tema` como primer paso. Luego el asistente debe bajar a texto verified y redactar el entregable.",
+        "Orquesta el flujo de estudio: plan + `investigar_tema` (modos memo/escrito/consulta). `modo=auto` infiere el entregable desde la consulta.",
       inputSchema: {
-        modo: z.enum(FLUJO_MODOS),
+        modo: z.enum(FLUJO_MODOS_CON_AUTO).default("auto"),
         consulta: z.string().min(2),
         rol: z.string().optional(),
         rit: z.string().optional(),
@@ -118,23 +148,27 @@ export function registerWorkflowTools(server: McpServer): void {
       limite_por_fuente,
     }) => {
       try {
+        const resolved = resolveFlujoModo(modo, consulta);
         const plan = planFlujoEstudio({
-          modo,
+          modo: resolved.modo,
           consulta,
           rol,
           rit,
           numero_dictamen,
         });
-        const runPack = ejecutar_pack && shouldRunPack(modo);
+        const header = resolved.inferred
+          ? `_Modo inferido automáticamente: \`${resolved.modo}\`._\n\n`
+          : "";
+        const runPack = ejecutar_pack && shouldRunPack(resolved.modo);
         if (!runPack) {
           return okText(
             [
-              plan,
+              header + plan,
               "",
               "## Pack de investigación",
-              modo === "seguimiento_causa"
+              resolved.modo === "seguimiento_causa"
                 ? "_Omitido: usa `obtener_causa_pjud` / `buscar_causa_pjud` y luego `minuta_cliente`._"
-                : modo === "cita_rapida"
+                : resolved.modo === "cita_rapida"
                   ? "_Omitido: ve directo a `citar_texto_legal` / `pegar_fallo_pjud` / `citar_dictamen_pegado`._"
                   : "_Pack no ejecutado (`ejecutar_pack=false`)._",
             ].join("\n"),
@@ -146,7 +180,7 @@ export function registerWorkflowTools(server: McpServer): void {
         );
         return okText(
           [
-            plan,
+            header + plan,
             "",
             "---",
             "",
@@ -155,9 +189,9 @@ export function registerWorkflowTools(server: McpServer): void {
             pack,
             "",
             "### Continuación obligatoria",
-            "- Baja a texto oficial (`citar_texto_legal` / `obtener_articulo` / `obtener_fallo_tc`).",
+            "- `lista_prueba_normativa` → `obtener_articulo` / `citar_texto_legal`.",
             "- PJUD: `indice_considerandos` o `pegar_fallo_pjud` con texto pegado.",
-            "- Redacta el entregable del modo; usa `plantilla_escrito` o `minuta_cliente` si ayuda.",
+            "- Redacta con `plantilla_escrito` / `minuta_cliente` / `anexo_citas`.",
           ].join("\n"),
         );
       } catch (error) {
@@ -175,7 +209,7 @@ export function registerWorkflowTools(server: McpServer): void {
       description:
         "Orquesta el inicio de un memo o escrito: plan de flujo, plantilla (si escrito), lista de antecedentes sugerida y, por defecto, pack `investigar_tema`. Luego baja a texto verified y usa `anexo_citas`.",
       inputSchema: {
-        modo: z.enum(["memo", "escrito"]).default("escrito"),
+        modo: z.enum(["memo", "escrito", "auto"]).default("auto"),
         consulta: z.string().min(2),
         tipo_escrito: z.enum(ESCRITO_TIPOS).optional(),
         hechos: z.string().optional(),
@@ -192,16 +226,31 @@ export function registerWorkflowTools(server: McpServer): void {
       limite_por_fuente,
     }) => {
       try {
-        const tipo = tipo_escrito ?? "generico";
-        const plan = planFlujoEstudio({ modo, consulta });
+        const inferredFlujo = resolveFlujoModo("auto", consulta).modo;
+        const flujo: "memo" | "escrito" =
+          modo === "auto"
+            ? inferredFlujo === "memo"
+              ? "memo"
+              : "escrito"
+            : modo;
+        const tipo = tipo_escrito ?? inferTipoEscrito(consulta);
+        const tipoAuto = !tipo_escrito;
+        const plan = planFlujoEstudio({ modo: flujo, consulta });
         const sections: string[] = [
-          `# Preparar entregable — modo \`${modo}\``,
+          `# Preparar entregable — modo \`${flujo}\`${modo === "auto" ? " _(auto)_" : ""}`,
+          tipoAuto && flujo === "escrito"
+            ? `_Tipo de escrito inferido: \`${tipo}\`._`
+            : undefined,
           "",
           plan,
-        ];
+        ].filter((x): x is string => Boolean(x));
 
-        if (modo === "escrito") {
+        if (flujo === "escrito") {
           sections.push(
+            "",
+            "---",
+            "",
+            listaPruebaNormativa({ tema: consulta, tipo_escrito: tipo }),
             "",
             "---",
             "",
@@ -219,7 +268,7 @@ export function registerWorkflowTools(server: McpServer): void {
           "",
           listaAntecedentes({
             materia: mapEscritoToAntecedentes(
-              modo === "escrito" ? tipo : undefined,
+              flujo === "escrito" ? tipo : undefined,
             ),
             hechos: hechos ?? consulta,
           }),
