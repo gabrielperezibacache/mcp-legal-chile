@@ -95,7 +95,12 @@ test("tools de catálogo v1.18 están registrados en workflow.ts", () => {
   }
   for (const name of REQUIRED_STUDY_TOOLS) {
     // Each required study tool should appear somewhere in src/tools
-    const hit = ["workflow", "jurisprudencia", "dictamenes"].some((file) => {
+    const hit = [
+      "workflow",
+      "jurisprudencia",
+      "dictamenes",
+      "legislacion",
+    ].some((file) => {
       const body = readFileSync(join(root, `src/tools/${file}.ts`), "utf8");
       return body.includes(`"${name}"`);
     });

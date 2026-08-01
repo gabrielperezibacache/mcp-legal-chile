@@ -4,7 +4,7 @@ Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps 
 
 **Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.20.0
+**Versión:** 1.21.0
 
 ## Proyecto libre
 
@@ -58,6 +58,8 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | `preparar_entregable` | Plan + plantilla + pack | Inicio orquestado de memo/escrito (`modo=auto`) |
 | `borrador_mensaje_cliente` | Borrador local | Correo/WhatsApp solo con contexto aportado |
 | `siguiente_paso` | Guía local | Qué tool llamar según el estado del trabajo |
+| `resolver_norma_frecuente` | Catálogo local | Alias → idNorma/URL (CT, CPR, 19.880, …) |
+| `listar_normas_frecuentes` | Catálogo local | Lista completa del hot catalog |
 | `buscar_causa_pjud` / `obtener_causa_pjud` | **Siempre `candidate`** (scraping) | Oficina Judicial Virtual PJUD — **experimental/no oficial**, ver [abajo](#case-tracking-pjud-experimentalno-oficial) |
 
 **Integridad (anti-alucinación):** cada resultado lleva `integrity`:
@@ -83,6 +85,7 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 7. Seguimiento: `obtener_causa_pjud` → `comparar_actuaciones` → aviso al cliente.
 8. Resources MCP: `legalchile://guia/memo`, `.../escrito`, `.../seguimiento`, `.../honestidad`, `.../dia-tipico`.
 9. Si te trabas: `siguiente_paso` con el estado actual (`pack_listo`, `causa_obtenida`, etc.).
+10. Guía completa: [`docs/flujo-estudio.md`](docs/flujo-estudio.md).
 
 ## SLOs (objetivos P95)
 

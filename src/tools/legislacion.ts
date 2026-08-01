@@ -2,6 +2,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { formatChileanCitation } from "../citation.js";
 import {
+  listarNormasFrecuentes,
+  resolverNormaFrecuente,
+} from "../normaFrecuente.js";
+import {
   citarTextoLegal,
   searchLegislacion,
   getNorma,
@@ -44,6 +48,38 @@ function softBcnFailure(error: unknown, label: string) {
 }
 
 export function registerLegislacionTools(server: McpServer): void {
+  server.registerTool(
+    "resolver_norma_frecuente",
+    {
+      title: "Resolver norma frecuente (catálogo local)",
+      description:
+        "Resuelve aliases locales (CT, CPR, CPC, 19.880, etc.) a idNorma + URL LeyChile sin llamar a BCN. Luego usa obtener_articulo / citar_texto_legal. integrity candidate hasta obtener XML.",
+      inputSchema: {
+        consulta: z.string().min(2),
+      },
+    },
+    async ({ consulta }) => {
+      try {
+        return okText(resolverNormaFrecuente(consulta));
+      } catch (error) {
+        return fail(
+          `Error resolver_norma_frecuente: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "listar_normas_frecuentes",
+    {
+      title: "Listar normas frecuentes del catálogo",
+      description:
+        "Lista el catálogo hot local (idNorma, URL, aliases). No consulta BCN.",
+      inputSchema: {},
+    },
+    async () => okText(listarNormasFrecuentes()),
+  );
+
   server.registerTool(
     "buscar_legislacion",
     {

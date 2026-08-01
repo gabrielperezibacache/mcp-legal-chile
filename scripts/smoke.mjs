@@ -82,6 +82,8 @@ async function main() {
       "lista_prueba_normativa",
       "borrador_mensaje_cliente",
       "siguiente_paso",
+      "resolver_norma_frecuente",
+      "listar_normas_frecuentes",
       "pegar_fallo_pjud",
       "citar_dictamen_pegado",
       "anexo_citas",

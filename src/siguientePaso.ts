@@ -33,7 +33,8 @@ export function siguientePaso(opts: {
     case "inicio":
       lines.push(
         "1. `catalogo_flujos` (opcional) o `asesorar` / `preparar_entregable` con `modo=auto`.",
-        "2. Si es carpeta nueva: `lista_antecedentes` → `borrador_mensaje_cliente` (solicitud).",
+        "2. Norma conocida: `resolver_norma_frecuente` → `obtener_articulo`.",
+        "3. Si es carpeta nueva: `lista_antecedentes` → `borrador_mensaje_cliente` (solicitud).",
       );
       break;
     case "pack_listo":

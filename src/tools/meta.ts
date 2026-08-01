@@ -22,6 +22,10 @@ export function registerMetaTools(server: McpServer, version: string): void {
           workflows: FLUJO_CATALOG,
           honestyMatrix: {
             buscar_legislacion: "candidate / metadata BCN + buscador LeyChile",
+            resolver_norma_frecuente:
+              "candidate — catálogo local hot (idNorma/URL); texto via obtener_articulo",
+            listar_normas_frecuentes:
+              "metadata local — aliases idNorma del catálogo hot",
             obtener_norma: "candidate / metadata BCN",
             estado_norma:
               "candidate / metadata publicación BCN (no determina vigencia sola)",

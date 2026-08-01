@@ -108,6 +108,8 @@ export const REQUIRED_STUDY_TOOLS = [
   "indice_considerandos",
   "citar_dictamen_pegado",
   "investigar_tema",
+  "resolver_norma_frecuente",
+  "listar_normas_frecuentes",
 ] as const;
 
 export const FLUJO_MODOS_CON_AUTO = [...FLUJO_MODOS, "auto"] as const;

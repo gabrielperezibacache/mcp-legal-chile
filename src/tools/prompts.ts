@@ -479,11 +479,52 @@ export function registerPrompts(server: McpServer): void {
           content: {
             type: "text",
             text: [
-              `Llama minuta_cliente tipo=${tipo}.`,
+              `Llama borrador_mensaje_cliente (o minuta_cliente) tipo=${tipo}.`,
               rol_o_rit ? `ROL/RIT: ${rol_o_rit}` : undefined,
               caratulado ? `Caratulado: ${caratulado}` : undefined,
-              "Redacta el mensaje final siguiendo la estructura. No inventes movimientos ni resoluciones.",
-              "Si el contexto es PJUD, integrity=candidate.",
+              "No inventes movimientos ni resoluciones. Si el contexto es PJUD, integrity=candidate.",
+              "",
+              "--- CONTEXTO ---",
+              contexto,
+            ]
+              .filter((x): x is string => Boolean(x))
+              .join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "borrador_mensaje_cliente",
+    {
+      title: "Borrador listo para enviar al cliente",
+      description:
+        "Genera un mensaje al cliente solo con el contexto aportado.",
+      argsSchema: {
+        tipo: z.enum([
+          "actualizacion_causa",
+          "resumen_asesoria",
+          "solicitud_antecedentes",
+        ]),
+        contexto: z.string(),
+        destinatario: z.string().optional(),
+        rol_o_rit: z.string().optional(),
+        caratulado: z.string().optional(),
+      },
+    },
+    ({ tipo, contexto, destinatario, rol_o_rit, caratulado }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Usa borrador_mensaje_cliente tipo=${tipo}.`,
+              destinatario ? `Destinatario: ${destinatario}` : undefined,
+              rol_o_rit ? `ROL/RIT: ${rol_o_rit}` : undefined,
+              caratulado ? `Caratulado: ${caratulado}` : undefined,
+              "Revisa el borrador; no agregues hechos fuera del contexto.",
               "",
               "--- CONTEXTO ---",
               contexto,
