@@ -67,11 +67,22 @@ test("inferTipoEscrito detecta tutela y protección", () => {
     inferTipoEscrito("tutela laboral por discriminación"),
     "tutela_laboral",
   );
+  assert.equal(inferTipoEscrito("despido y tutela"), "tutela_laboral");
   assert.equal(
     inferTipoEscrito("recurso de protección contra municipalidad"),
     "recurso_proteccion",
   );
   assert.equal(inferTipoEscrito("despido injustificado"), "demanda_laboral");
+});
+
+test("inferTipoEscrito no confunde protección de datos/consumidor con recurso", () => {
+  assert.equal(inferTipoEscrito("protección de datos personales"), "generico");
+  assert.equal(inferTipoEscrito("ley de protección al consumidor"), "generico");
+});
+
+test("inferModoFromConsulta prioriza memo sobre casación", () => {
+  assert.equal(inferModoFromConsulta("memo sobre casación"), "memo");
+  assert.equal(inferModoFromConsulta("tutela laboral"), "escrito");
 });
 
 test("listaPruebaNormativa sugiere artículos CT", () => {

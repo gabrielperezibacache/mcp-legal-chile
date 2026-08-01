@@ -308,16 +308,22 @@ export function mapEscritoToAntecedentes(
 
 export function inferModoFromConsulta(consulta: string): FlujoModo {
   const q = consulta.toLowerCase();
-  if (/actuaci|movimiento|seguimiento|causa|ojv|rit\b|ruc\b/.test(q)) {
+  if (/actuaci|movimiento|seguimiento|\bcausa\b|ojv|\brit\b|\bruc\b/.test(q)) {
     return "seguimiento_causa";
   }
+  // Memo before escrito so "memo sobre casación" does not become escrito.
+  if (/\bmemo\b|\birac\b|asesor[ií]a/.test(q)) return "memo";
   if (/cita(r)?\b|considerando|dictamen|artículo|articulo/.test(q)) {
     return "cita_rapida";
   }
-  if (/demanda|recurso|escrito|casaci|nulidad|protección|proteccion/.test(q)) {
+  if (
+    /demanda|recurso|escrito|casaci|nulidad|tutela|juicio\s+ejecutivo/.test(
+      q,
+    ) ||
+    /recurso\s+de\s+protecci[oó]n|acci[oó]n\s+de\s+protecci[oó]n/.test(q)
+  ) {
     return "escrito";
   }
-  if (/memo|irac|asesor/.test(q)) return "memo";
   return "consulta";
 }
 
@@ -331,13 +337,24 @@ export function resolveFlujoModo(
 
 export function inferTipoEscrito(consulta: string): EscritoTipo {
   const q = consulta.toLowerCase();
-  if (/tutela\s+laboral|tutela\s+de\s+derechos?\s+fundamentales/.test(q)) {
+  if (
+    /tutela\s+laboral|tutela\s+de\s+derechos?\s+fundamentales/.test(q) ||
+    (/\btutela\b/.test(q) &&
+      /laboral|despido|empleador|trabajador|fuero/.test(q))
+  ) {
     return "tutela_laboral";
   }
   if (/despido|finiquito|laboral|fuero|cotizaci/.test(q)) {
     return "demanda_laboral";
   }
-  if (/protecci[oó]n|art\.?\s*20|garant[ií]a\s+constitucional/.test(q)) {
+  // Consumidor / LPC before bare "protección" (evita confundir con recurso).
+  if (/consumidor|19\.?496|\blpc\b/.test(q)) {
+    return "generico";
+  }
+  if (
+    /recurso\s+de\s+protecci[oó]n|acci[oó]n\s+de\s+protecci[oó]n/.test(q) ||
+    (/art\.?\s*20/.test(q) && /garant[ií]a|cpr|constituci/.test(q))
+  ) {
     return "recurso_proteccion";
   }
   if (/ejecutiv|pagar[eé]|cheque|mandato\s+ejecutivo/.test(q)) {
