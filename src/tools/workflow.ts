@@ -17,11 +17,7 @@ import {
   formatAnexoCitas,
   type CitaAnexoItem,
 } from "../studyExtras.js";
-import {
-  ESTADOS_FLUJO,
-  guiaDiaTipico,
-  siguientePaso,
-} from "../siguientePaso.js";
+import { ESTADOS_FLUJO, siguientePaso } from "../siguientePaso.js";
 import {
   ESCRITO_TIPOS,
   MINUTA_TIPOS,
