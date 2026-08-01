@@ -124,7 +124,7 @@ export function planFlujoEstudio(opts: {
     "",
     "## Prompts / tools útiles",
     "- `asesorar`, `plantilla_escrito`, `minuta_cliente`, `aviso_desde_causa`, `anexo_citas`, `comparar_actuaciones`.",
-    "- `indice_considerandos`, `pegar_fallo_pjud`, `pegar_dictamen_cgr`, `checklist_*`.",
+    "- `indice_considerandos`, `pegar_fallo_pjud`, `citar_dictamen_pegado` (prompt pegar_dictamen_cgr), `checklist_*`.",
     "- Resources MCP: `legalchile://guia/memo|escrito|seguimiento|honestidad`.",
   );
 

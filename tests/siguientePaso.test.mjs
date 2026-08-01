@@ -21,6 +21,42 @@ test("siguientePaso causa_obtenida apunta a borrador", () => {
   assert.match(md, /comparar_actuaciones/);
 });
 
+test("siguientePaso cubre estados de redacción y cita", () => {
+  assert.match(
+    siguientePaso({ estado: "inicio" }),
+    /preparar_entregable|asesorar/,
+  );
+  assert.match(
+    siguientePaso({ estado: "prueba_normativa_lista" }),
+    /obtener_articulo|plantilla_escrito/,
+  );
+  assert.match(
+    siguientePaso({ estado: "texto_legal_listo" }),
+    /pegar_fallo_pjud|IRAC/,
+  );
+  assert.match(
+    siguientePaso({ estado: "fallo_pegado" }),
+    /indice_considerandos|anexo_citas/,
+  );
+  assert.match(
+    siguientePaso({ estado: "dictamen_pegado" }),
+    /citar_dictamen_pegado/,
+  );
+  assert.match(
+    siguientePaso({ estado: "actuaciones_comparadas" }),
+    /borrador_mensaje_cliente/,
+  );
+  assert.match(
+    siguientePaso({ estado: "escrito_estructurado" }),
+    /anexo_citas/,
+  );
+  assert.match(
+    siguientePaso({ estado: "anexo_armado" }),
+    /borrador_mensaje_cliente/,
+  );
+  assert.match(siguientePaso({ estado: "mensaje_cliente_listo" }), /OJV/);
+});
+
 test("guiaDiaTipico menciona mañana y tarde", () => {
   const md = guiaDiaTipico();
   assert.match(md, /Mañana/);

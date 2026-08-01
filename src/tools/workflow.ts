@@ -5,6 +5,7 @@ import {
   FLUJO_MODOS_CON_AUTO,
   formatCatalogoFlujos,
   inferTipoEscrito,
+  resolveEntregableModo,
   listaAntecedentes,
   listaPruebaNormativa,
   mapEscritoToAntecedentes,
@@ -242,18 +243,16 @@ export function registerWorkflowTools(server: McpServer): void {
       limite_por_fuente,
     }) => {
       try {
-        const inferredFlujo = resolveFlujoModo("auto", consulta).modo;
-        const flujo: "memo" | "escrito" =
-          modo === "auto"
-            ? inferredFlujo === "memo"
-              ? "memo"
-              : "escrito"
-            : modo;
+        const resolved = resolveEntregableModo(modo, consulta);
+        const flujo = resolved.modo;
         const tipo = tipo_escrito ?? inferTipoEscrito(consulta);
         const tipoAuto = !tipo_escrito;
         const plan = planFlujoEstudio({ modo: flujo, consulta });
         const sections: string[] = [
           `# Preparar entregable — modo \`${flujo}\`${modo === "auto" ? " _(auto)_" : ""}`,
+          resolved.sugerido
+            ? `_Consulta alineada más con flujo \`${resolved.sugerido}\` — sin plantilla de escrito. Usa \`flujo_estudio\` / \`asesorar\` si corresponde._`
+            : undefined,
           tipoAuto && flujo === "escrito"
             ? `_Tipo de escrito inferido: \`${tipo}\`._`
             : undefined,

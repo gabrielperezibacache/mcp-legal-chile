@@ -65,6 +65,19 @@ test("compararActuaciones detecta nuevas y removidas", () => {
   assert.match(md, /minuta_cliente/);
 });
 
+test("compararActuaciones deduplica líneas repetidas en actuales", () => {
+  const md = compararActuaciones({
+    anteriores: "01-01-2024 — Ingreso",
+    actuales: [
+      "01-01-2024 — Ingreso",
+      "10-02-2024 — Audiencia",
+      "10-02-2024 — Audiencia",
+    ].join("\n"),
+  });
+  assert.match(md, /Nuevas \(1\)/);
+  assert.equal((md.match(/Audiencia/g) || []).length, 1);
+});
+
 test("contextoDesdeCausa arma bloque para minuta", () => {
   const ctx = contextoDesdeCausa({
     caratulado: "Pérez con Soto",
@@ -89,8 +102,12 @@ test("tools y prompt de casación / extras estánados", () => {
   }
   const prompts = readFileSync(join(root, "src/tools/prompts.ts"), "utf8");
   assert.match(prompts, /"checklist_recurso_casacion"/);
+  assert.match(prompts, /tipo=recurso_casacion/);
   const templates = readFileSync(join(root, "src/templates.ts"), "utf8");
   assert.match(templates, /recurso_casacion/);
+  const plan = readFileSync(join(root, "src/workflow.ts"), "utf8");
+  assert.match(plan, /citar_dictamen_pegado/);
+  assert.doesNotMatch(plan, /`pegar_dictamen_cgr`/);
 });
 
 test("createServer registra resources de guía", () => {

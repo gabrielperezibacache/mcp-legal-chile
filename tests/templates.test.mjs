@@ -51,6 +51,24 @@ test("plantillaEscrito recurso de protección cita CPR", () => {
   assert.match(md, /art\. 20/);
 });
 
+test("plantillaEscrito tutela laboral y casación", () => {
+  const tut = plantillaEscrito({
+    tipo: "tutela_laboral",
+    materia: "discriminación",
+    hechos: "despido con vulneración",
+  });
+  assert.match(tut, /207436/);
+  assert.match(tut, /tutela/i);
+  assert.match(tut, /Qué falta verificar/);
+  const cas = plantillaEscrito({
+    tipo: "recurso_casacion",
+    hechos: "sentencia de segunda instancia",
+  });
+  assert.match(cas, /22740/);
+  assert.match(cas, /casaci/i);
+  assert.match(cas, /anexo_citas|Qué falta verificar/);
+});
+
 test("minutaCliente actualizacion_causa usa solo contexto", () => {
   const md = minutaCliente({
     tipo: "actualizacion_causa",

@@ -77,6 +77,9 @@ async function main() {
       "estado_norma",
       "asesorar",
       "preparar_entregable",
+      "flujo_estudio",
+      "plantilla_escrito",
+      "minuta_cliente",
       "catalogo_flujos",
       "lista_antecedentes",
       "lista_prueba_normativa",
@@ -85,9 +88,11 @@ async function main() {
       "resolver_norma_frecuente",
       "listar_normas_frecuentes",
       "pegar_fallo_pjud",
+      "indice_considerandos",
       "citar_dictamen_pegado",
       "anexo_citas",
       "aviso_desde_causa",
+      "comparar_actuaciones",
     ]) {
       if (!names.includes(required)) throw new Error(`missing ${required}`);
     }

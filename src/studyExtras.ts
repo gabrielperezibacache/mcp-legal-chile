@@ -91,14 +91,26 @@ function parseMovLines(raw: string): string[] {
     .filter(Boolean);
 }
 
+function uniqueMovLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const key = normalizeMovLine(line);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(line);
+  }
+  return out;
+}
+
 export function compararActuaciones(opts: {
   anteriores: string;
   actuales: string;
   rol_o_rit?: string;
   caratulado?: string;
 }): string {
-  const prev = parseMovLines(opts.anteriores);
-  const next = parseMovLines(opts.actuales);
+  const prev = uniqueMovLines(parseMovLines(opts.anteriores));
+  const next = uniqueMovLines(parseMovLines(opts.actuales));
   if (!prev.length && !next.length) {
     throw new Error(
       "Pega al menos una lista de actuaciones (una por línea) en anteriores y/o actuales.",

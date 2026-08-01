@@ -404,7 +404,7 @@ export function registerPrompts(server: McpServer): void {
               "2) Normas de fondo aplicables vía buscar_legislacion / citar_texto_legal (solo verified)",
               "3) Jurisprudencia CS: buscar_jurisprudencia → pegar_fallo_pjud / indice_considerandos",
               "4) Checklist: causal precisa, capítulos de casación, petitorio, preparación del recurso — sin inventar ROL ni considerandos",
-              "5) Opcional: plantilla_escrito tipo generico + anexo_citas con lo verified",
+              "5) Opcional: plantilla_escrito tipo=recurso_casacion + anexo_citas con lo verified",
             ].join("\n"),
           },
         },

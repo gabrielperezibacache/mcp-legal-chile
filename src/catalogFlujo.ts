@@ -33,7 +33,14 @@ export const FLUJO_CATALOG: FlujoCatalogEntry[] = [
     id: "memo",
     titulo: "Memo IRAC",
     cuando: "Necesitas un análisis con fuentes antes de aconsejar o litigar.",
-    tools: ["asesorar", "investigar_tema", "citar_texto_legal", "anexo_citas"],
+    tools: [
+      "preparar_entregable",
+      "asesorar",
+      "investigar_tema",
+      "lista_prueba_normativa",
+      "citar_texto_legal",
+      "anexo_citas",
+    ],
     prompts: ["memo_asesoria", "flujo_estudio"],
     resource: "legalchile://guia/memo",
   },
@@ -308,21 +315,34 @@ export function mapEscritoToAntecedentes(
 
 export function inferModoFromConsulta(consulta: string): FlujoModo {
   const q = consulta.toLowerCase();
-  if (/actuaci|movimiento|seguimiento|\bcausa\b|ojv|\brit\b|\bruc\b/.test(q)) {
-    return "seguimiento_causa";
-  }
-  // Memo before escrito so "memo sobre casación" does not become escrito.
+  // Memo/asesoría first: "memo sobre seguimiento" / "asesoría sobre movimientos".
   if (/\bmemo\b|\birac\b|asesor[ií]a/.test(q)) return "memo";
-  if (/cita(r)?\b|considerando|dictamen|artículo|articulo/.test(q)) {
-    return "cita_rapida";
-  }
+  // Escrito before cita_rapida: "demanda citando artículo…" / "recurso … art. 20".
   if (
-    /demanda|recurso|escrito|casaci|nulidad|tutela|juicio\s+ejecutivo/.test(
+    /demanda|recurso|escrito|casaci|nulidad|tutela|juicio\s+ejecutivo|impugnar/.test(
       q,
     ) ||
     /recurso\s+de\s+protecci[oó]n|acci[oó]n\s+de\s+protecci[oó]n/.test(q)
   ) {
     return "escrito";
+  }
+  // Narrow seguimiento — avoid bare "causa" ("teoría de la causa").
+  if (
+    /seguimiento|actuaci[oó]n|ojv|obtener_causa|últimos?\s+movimientos/.test(
+      q,
+    ) ||
+    (/movimientos?/.test(q) && /\bcausa\b/.test(q)) ||
+    /\brit\b\s*[-:]?\s*\d|\bruc\b\s*[-:]?\s*\d/.test(q)
+  ) {
+    return "seguimiento_causa";
+  }
+  if (
+    /\bcitar\b|considerando\s+\d+|dictamen\s+(n[°º.]|nro)|pegar_fallo|pegar_dictamen|\bcita\s+r[aá]pida\b/.test(
+      q,
+    ) ||
+    /\bconsiderando\b|\bdictamen\b|art[ií]culo/.test(q)
+  ) {
+    return "cita_rapida";
   }
   return "consulta";
 }
@@ -335,6 +355,24 @@ export function resolveFlujoModo(
   return { modo: inferModoFromConsulta(consulta), inferred: true };
 }
 
+/** Collapse flujo inference to memo|escrito for `preparar_entregable`. */
+export function resolveEntregableModo(
+  modo: "memo" | "escrito" | "auto",
+  consulta: string,
+): {
+  modo: "memo" | "escrito";
+  inferred: boolean;
+  /** Present when auto inferred a non-entregable flujo (no plantilla forzado). */
+  sugerido?: FlujoModo;
+} {
+  if (modo !== "auto") return { modo, inferred: false };
+  const flujo = inferModoFromConsulta(consulta);
+  if (flujo === "escrito") return { modo: "escrito", inferred: true };
+  if (flujo === "memo") return { modo: "memo", inferred: true };
+  // seguimiento / cita_rapida / consulta → plan tipo memo, sin plantilla de escrito.
+  return { modo: "memo", inferred: true, sugerido: flujo };
+}
+
 export function inferTipoEscrito(consulta: string): EscritoTipo {
   const q = consulta.toLowerCase();
   if (
@@ -344,29 +382,37 @@ export function inferTipoEscrito(consulta: string): EscritoTipo {
   ) {
     return "tutela_laboral";
   }
-  if (/despido|finiquito|laboral|fuero|cotizaci/.test(q)) {
-    return "demanda_laboral";
-  }
   // Consumidor / LPC before bare "protección" (evita confundir con recurso).
   if (/consumidor|19\.?496|\blpc\b/.test(q)) {
     return "generico";
   }
+  // Recursos explícitos before laboral/despido (protección/casación por despido).
   if (
     /recurso\s+de\s+protecci[oó]n|acci[oó]n\s+de\s+protecci[oó]n/.test(q) ||
     (/art\.?\s*20/.test(q) && /garant[ií]a|cpr|constituci/.test(q))
   ) {
     return "recurso_proteccion";
   }
-  if (/ejecutiv|pagar[eé]|cheque|mandato\s+ejecutivo/.test(q)) {
-    return "juicio_ejecutivo";
-  }
-  if (/alimento|cuidado\s+personal|familia|divorcio|visitas/.test(q)) {
-    return "escrito_familia";
-  }
+  if (/casaci[oó]n/.test(q)) return "recurso_casacion";
   if (/nulidad\s+penal|recurso\s+de\s+nulidad/.test(q)) {
     return "recurso_nulidad_penal";
   }
-  if (/casaci[oó]n/.test(q)) return "recurso_casacion";
+  if (/despido|finiquito|laboral|fuero/.test(q)) {
+    return "demanda_laboral";
+  }
+  if (/ejecutiv|pagar[eé]|cheque|mandato\s+ejecutivo/.test(q)) {
+    return "juicio_ejecutivo";
+  }
+  // Require family-law cues — not bare "familia" ("empresa familiar").
+  if (
+    /alimento|cuidado\s+personal|divorcio|visitas|patria\s+potestad|pensi[oó]n\s+de\s+alimentos|tribunal\s+de\s+familia|derecho\s+de\s+familia/.test(
+      q,
+    ) ||
+    (/\bfamilia\b/.test(q) &&
+      /juicio|escrito|demanda|tribunal|pensi[oó]n|alimento|divorcio/.test(q))
+  ) {
+    return "escrito_familia";
+  }
   if (/dictamen|contralor|19\.?880|acto\s+administrativo/.test(q)) {
     return "contencioso_administrativo";
   }
@@ -417,6 +463,20 @@ const SUGGESTED_ARTICLES: Partial<
   recurso_proteccion: [
     { articulo: "19", nota: "Garantías constitucionales involucradas" },
     { articulo: "20", nota: "Recurso de protección" },
+  ],
+  recurso_casacion: [
+    {
+      articulo: "764",
+      nota: "Casación en la forma — causales (verificar numeración vigente CPC)",
+    },
+    {
+      articulo: "767",
+      nota: "Casación en el fondo (verificar numeración vigente CPC)",
+    },
+    {
+      articulo: "770",
+      nota: "Plazos / interposición (verificar numeración vigente CPC)",
+    },
   ],
   juicio_ejecutivo: [
     {
