@@ -131,7 +131,7 @@ export function compararActuaciones(opts: {
     same.length > 12 ? `- _…y ${same.length - 12} más_` : undefined,
     "",
     "## Siguiente paso",
-    "- Redacta aviso al cliente con `minuta_cliente` tipo `actualizacion_causa`, usando sobre todo las **Nuevas**.",
+    "- Redacta aviso con `borrador_mensaje_cliente` / `minuta_cliente` (actualizacion_causa), usando sobre todo las **Nuevas**.",
     "- No afirmes efectos jurídicos que no consten en las actuaciones listadas.",
   ].filter((x): x is string => Boolean(x));
 

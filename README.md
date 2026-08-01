@@ -4,7 +4,7 @@ Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps 
 
 **Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.19.0
+**Versión:** 1.20.0
 
 ## Proyecto libre
 
@@ -56,6 +56,8 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | `lista_antecedentes` | Checklist local | Documentos a pedir al cliente por materia |
 | `lista_prueba_normativa` | Checklist local | Artículos/idNorma a obtener antes de redactar |
 | `preparar_entregable` | Plan + plantilla + pack | Inicio orquestado de memo/escrito (`modo=auto`) |
+| `borrador_mensaje_cliente` | Borrador local | Correo/WhatsApp solo con contexto aportado |
+| `siguiente_paso` | Guía local | Qué tool llamar según el estado del trabajo |
 | `buscar_causa_pjud` / `obtener_causa_pjud` | **Siempre `candidate`** (scraping) | Oficina Judicial Virtual PJUD — **experimental/no oficial**, ver [abajo](#case-tracking-pjud-experimentalno-oficial) |
 
 **Integridad (anti-alucinación):** cada resultado lleva `integrity`:
@@ -79,7 +81,8 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 5. Entregables: `plantilla_escrito`, `anexo_citas`, `minuta_cliente` / `aviso_desde_causa`.
 6. Carpeta: `lista_antecedentes` → `minuta_cliente` (solicitud_antecedentes).
 7. Seguimiento: `obtener_causa_pjud` → `comparar_actuaciones` → aviso al cliente.
-8. Resources MCP: `legalchile://guia/memo`, `.../escrito`, `.../seguimiento`, `.../honestidad`.
+8. Resources MCP: `legalchile://guia/memo`, `.../escrito`, `.../seguimiento`, `.../honestidad`, `.../dia-tipico`.
+9. Si te trabas: `siguiente_paso` con el estado actual (`pack_listo`, `causa_obtenida`, etc.).
 
 ## SLOs (objetivos P95)
 

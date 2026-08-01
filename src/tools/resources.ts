@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { planFlujoEstudio } from "../workflow.js";
 import { ANTI_HALLUCINATION_RULES } from "../integrity.js";
+import { guiaDiaTipico } from "../siguientePaso.js";
+import { planFlujoEstudio } from "../workflow.js";
 
 const GUIDES: Record<
   string,
@@ -61,9 +62,16 @@ const GUIDES: Record<
         "- Memo/escrito: `preparar_entregable` / `asesorar`",
         "- PJUD texto: `indice_considerandos` → `pegar_fallo_pjud`",
         "- CGR texto: `citar_dictamen_pegado`",
-        "- Entregables: `plantilla_escrito`, `minuta_cliente`, `anexo_citas`",
+        "- Entregables: `plantilla_escrito`, `minuta_cliente`, `borrador_mensaje_cliente`, `anexo_citas`",
         "- Carpeta: `lista_antecedentes`",
+        "- Si te trabas: `siguiente_paso`",
       ].join("\n"),
+  },
+  "legalchile://guia/dia-tipico": {
+    title: "Guía: día típico en el estudio",
+    description:
+      "Encadenamiento mañana/tarde de tools MCP para consulta, escrito y seguimiento.",
+    body: () => guiaDiaTipico(),
   },
 };
 

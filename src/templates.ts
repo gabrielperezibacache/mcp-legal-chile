@@ -275,3 +275,114 @@ export function minutaCliente(opts: {
 
   return lines.join("\n");
 }
+
+/**
+ * Produce a conservative client-facing draft that only restates supplied context.
+ * Does not invent legal conclusions or missing facts.
+ */
+export function borradorMensajeCliente(opts: {
+  tipo: MinutaTipo;
+  contexto: string;
+  rol_o_rit?: string;
+  caratulado?: string;
+  destinatario?: string;
+  tono?: "formal" | "claro";
+  pedir_antecedentes?: string[];
+}): string {
+  const tono = opts.tono ?? "claro";
+  const dest =
+    opts.destinatario?.trim() ||
+    (tono === "formal" ? "Estimado/a cliente" : "Hola");
+  const saludo = tono === "formal" ? `${dest}:` : `${dest},`;
+  const causaBits = [
+    opts.caratulado ? `caratulado «${opts.caratulado}»` : undefined,
+    opts.rol_o_rit ? `ROL/RIT ${opts.rol_o_rit}` : undefined,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const bullets = opts.contexto
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^[-*•]\s*/, "").trim())
+    .filter((l) => l && !/^integrity:/i.test(l) && !/^```/.test(l));
+
+  const bodyLines: string[] = [
+    "# Borrador de mensaje al cliente",
+    "",
+    "_Revisa antes de enviar. Solo se usa el contexto aportado; integrity `candidate` si viene de PJUD._",
+    "",
+    "---",
+    "",
+    saludo,
+    "",
+  ];
+
+  switch (opts.tipo) {
+    case "actualizacion_causa":
+      bodyLines.push(
+        causaBits
+          ? `Te escribo con una actualización de la causa ${causaBits}.`
+          : "Te escribo con una actualización de tu causa.",
+        "",
+        "Según la información disponible (pendiente de contrastar en el portal del Poder Judicial):",
+        ...(bullets.length
+          ? bullets.slice(0, 12).map((b) => `- ${b}`)
+          : ["- _(Sin detalle de movimientos en el contexto aportado.)_"]),
+        "",
+        "Cuando confirme el estado en el sistema oficial, te indico si hay algún plazo o actuación de tu parte.",
+      );
+      break;
+    case "solicitud_antecedentes":
+      bodyLines.push(
+        "Para avanzar con tu caso necesito que me envíes la siguiente información/documentación:",
+        "",
+        ...(opts.pedir_antecedentes?.length
+          ? opts.pedir_antecedentes.map((a, i) => `${i + 1}. ${a}`)
+          : bullets.length
+            ? bullets.map((b, i) => `${i + 1}. ${b}`)
+            : ["1. _(Completa la lista con `lista_antecedentes`.)_"]),
+        "",
+        "Con esos antecedentes podré revisar el asunto sobre fuentes oficiales y devolverte un análisis acotado.",
+      );
+      break;
+    default:
+      bodyLines.push(
+        "Resumo lo trabajado hasta ahora, con base únicamente en lo que me entregaste / lo verificado en fuentes:",
+        "",
+        ...(bullets.length
+          ? bullets.slice(0, 15).map((b) => `- ${b}`)
+          : ["- _(Sin hallazgos listados en el contexto.)_"]),
+        "",
+        "Lo marcado como pendiente de verificación no debe tomarse aún como conclusión definitiva.",
+      );
+  }
+
+  if (
+    opts.pedir_antecedentes?.length &&
+    opts.tipo !== "solicitud_antecedentes"
+  ) {
+    bodyLines.push(
+      "",
+      "Además, por favor envíame:",
+      ...opts.pedir_antecedentes.map((a, i) => `${i + 1}. ${a}`),
+    );
+  }
+
+  bodyLines.push(
+    "",
+    "Quedo atento/a a tus comentarios o a coordinar una llamada.",
+    "",
+    "Saludos,",
+    "_[Tu nombre]_",
+    "",
+    "---",
+    "",
+    "_Aviso: este mensaje no constituye asesoría jurídica formal. Los datos de causas judiciales deben contrastarse en Oficina Judicial Virtual / portal oficial._",
+    "",
+    "## Notas internas (no enviar)",
+    "- Generado por `borrador_mensaje_cliente`. No añade hechos fuera del contexto.",
+    "- Si necesitas la estructura guiada: `minuta_cliente`.",
+  );
+
+  return bodyLines.join("\n");
+}

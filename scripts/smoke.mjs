@@ -80,6 +80,8 @@ async function main() {
       "catalogo_flujos",
       "lista_antecedentes",
       "lista_prueba_normativa",
+      "borrador_mensaje_cliente",
+      "siguiente_paso",
       "pegar_fallo_pjud",
       "citar_dictamen_pegado",
       "anexo_citas",

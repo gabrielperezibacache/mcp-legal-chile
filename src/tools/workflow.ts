@@ -18,8 +18,14 @@ import {
   type CitaAnexoItem,
 } from "../studyExtras.js";
 import {
+  ESTADOS_FLUJO,
+  guiaDiaTipico,
+  siguientePaso,
+} from "../siguientePaso.js";
+import {
   ESCRITO_TIPOS,
   MINUTA_TIPOS,
+  borradorMensajeCliente,
   minutaCliente,
   plantillaEscrito,
 } from "../templates.js";
@@ -47,6 +53,20 @@ export function registerWorkflowTools(server: McpServer): void {
       inputSchema: {},
     },
     async () => okText(formatCatalogoFlujos()),
+  );
+
+  server.registerTool(
+    "siguiente_paso",
+    {
+      title: "Sugerir siguiente tool del flujo",
+      description:
+        "Dado el estado actual del trabajo (pack_listo, causa_obtenida, escrito_estructurado, etc.), indica la siguiente tool MCP a llamar. No consulta fuentes externas.",
+      inputSchema: {
+        estado: z.enum(ESTADOS_FLUJO),
+        consulta: z.string().optional(),
+      },
+    },
+    async ({ estado, consulta }) => okText(siguientePaso({ estado, consulta })),
   );
 
   server.registerTool(
@@ -328,7 +348,7 @@ export function registerWorkflowTools(server: McpServer): void {
     {
       title: "Minuta / aviso al cliente",
       description:
-        "Genera la estructura de un mensaje al cliente (actualización de causa, resumen de asesoría o solicitud de antecedentes) a partir del contexto aportado. No inventa movimientos ni resoluciones.",
+        "Genera la estructura de un mensaje al cliente (actualización de causa, resumen de asesoría o solicitud de antecedentes) a partir del contexto aportado. Para un borrador listo para editar usa `borrador_mensaje_cliente`.",
       inputSchema: {
         tipo: z.enum(MINUTA_TIPOS),
         contexto: z
@@ -352,6 +372,47 @@ export function registerWorkflowTools(server: McpServer): void {
           caratulado,
           destinatario,
           tono,
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "borrador_mensaje_cliente",
+    {
+      title: "Borrador de mensaje al cliente",
+      description:
+        "Redacta un borrador de correo/WhatsApp usando solo el contexto aportado (sin inventar hechos ni efectos jurídicos). Ideal tras `aviso_desde_causa`, `comparar_actuaciones` o `lista_antecedentes`.",
+      inputSchema: {
+        tipo: z.enum(MINUTA_TIPOS),
+        contexto: z.string().min(5),
+        rol_o_rit: z.string().optional(),
+        caratulado: z.string().optional(),
+        destinatario: z.string().optional(),
+        tono: z.enum(["formal", "claro"]).default("claro"),
+        pedir_antecedentes: z
+          .array(z.string())
+          .optional()
+          .describe("Lista explícita de documentos a pedir"),
+      },
+    },
+    async ({
+      tipo,
+      contexto,
+      rol_o_rit,
+      caratulado,
+      destinatario,
+      tono,
+      pedir_antecedentes,
+    }) =>
+      okText(
+        borradorMensajeCliente({
+          tipo,
+          contexto,
+          rol_o_rit,
+          caratulado,
+          destinatario,
+          tono,
+          pedir_antecedentes,
         }),
       ),
   );
@@ -469,6 +530,17 @@ export function registerWorkflowTools(server: McpServer): void {
         return okText(
           [
             minutaCliente({
+              tipo: "actualizacion_causa",
+              contexto,
+              rol_o_rit,
+              caratulado,
+              destinatario,
+              tono,
+            }),
+            "",
+            "---",
+            "",
+            borradorMensajeCliente({
               tipo: "actualizacion_causa",
               contexto,
               rol_o_rit,

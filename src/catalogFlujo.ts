@@ -60,6 +60,7 @@ export const FLUJO_CATALOG: FlujoCatalogEntry[] = [
       "obtener_causa_pjud",
       "comparar_actuaciones",
       "aviso_desde_causa",
+      "borrador_mensaje_cliente",
       "minuta_cliente",
     ],
     prompts: ["minuta_cliente"],
@@ -83,7 +84,7 @@ export const FLUJO_CATALOG: FlujoCatalogEntry[] = [
     id: "antecedentes",
     titulo: "Qué pedirle al cliente",
     cuando: "Abrir carpeta o preparar demanda sin inventar hechos.",
-    tools: ["lista_antecedentes", "minuta_cliente"],
+    tools: ["lista_antecedentes", "borrador_mensaje_cliente", "minuta_cliente"],
     prompts: ["minuta_cliente"],
   },
 ];
@@ -101,6 +102,8 @@ export const REQUIRED_STUDY_TOOLS = [
   "lista_antecedentes",
   "lista_prueba_normativa",
   "catalogo_flujos",
+  "siguiente_paso",
+  "borrador_mensaje_cliente",
   "pegar_fallo_pjud",
   "indice_considerandos",
   "citar_dictamen_pegado",
@@ -135,9 +138,10 @@ export function formatCatalogoFlujos(): string {
     "## Tipos de `plantilla_escrito`",
     ...ESCRITO_TIPOS.map((t) => `- \`${t}\``),
     "",
-    "## Honestidad",
+    "## Honestidad / día típico",
     "- Resource: `legalchile://guia/honestidad`",
-    "- Tool: `acerca_de`",
+    "- Resource: `legalchile://guia/dia-tipico`",
+    "- Tools: `acerca_de`, `siguiente_paso`",
   );
   return lines.join("\n");
 }
