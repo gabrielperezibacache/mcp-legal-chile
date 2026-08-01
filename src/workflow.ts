@@ -81,8 +81,9 @@ export function planFlujoEstudio(opts: {
           ? `1. \`obtener_causa_pjud\` con rol/rit \`${opts.rol ?? opts.rit}\` (si está habilitado; si no, portal_stub + link OJV).`
           : "1. `buscar_causa_pjud` con RUT/nombre o `obtener_causa_pjud` con ROL/RIT/RUC.",
         "2. Resume estado, litigantes y últimos movimientos indicando integrity=`candidate`.",
-        "3. Si el caratulado sugiere materia normativa: `investigar_tema` acotado (opcional).",
-        "4. Borrador de correo/WhatsApp al cliente con disclaimer y link al portal.",
+        "3. Si hay snapshot previo: `comparar_actuaciones`.",
+        "4. `aviso_desde_causa` o `minuta_cliente` (actualizacion_causa) — disclaimer + link portal.",
+        "5. Si el caratulado sugiere materia normativa: `investigar_tema` acotado (opcional).",
       );
       break;
     case "escrito":
@@ -122,8 +123,9 @@ export function planFlujoEstudio(opts: {
   lines.push(
     "",
     "## Prompts / tools útiles",
-    "- `asesorar` (plan + pack), `plantilla_escrito`, `minuta_cliente`, `indice_considerandos`.",
-    "- `memo_asesoria`, `lista_prueba_normativa`, `checklist_*`, `pegar_fallo_pjud`, `pegar_dictamen_cgr`.",
+    "- `asesorar`, `plantilla_escrito`, `minuta_cliente`, `aviso_desde_causa`, `anexo_citas`, `comparar_actuaciones`.",
+    "- `indice_considerandos`, `pegar_fallo_pjud`, `pegar_dictamen_cgr`, `checklist_*`.",
+    "- Resources MCP: `legalchile://guia/memo|escrito|seguimiento|honestidad`.",
   );
 
   return lines.join("\n");

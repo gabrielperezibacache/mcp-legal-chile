@@ -9,6 +9,7 @@ export const ESCRITO_TIPOS = [
   "juicio_ejecutivo",
   "contencioso_administrativo",
   "recurso_nulidad_penal",
+  "recurso_casacion",
   "escrito_familia",
   "generico",
 ] as const;
@@ -131,6 +132,22 @@ export function plantillaEscrito(opts: {
         "### III. Causal(es) de nulidad (artículos CPP con blockquote)",
         "### IV. Desarrollo: error de derecho vs hechos",
         "### V. Jurisprudencia citables",
+        "### VI. Petitorio",
+        "### VII. Qué falta verificar",
+      );
+      break;
+    case "recurso_casacion":
+      lines.push(
+        "1. CPC (22740) — casación en la forma y/o en el fondo: `obtener_articulo`",
+        "2. Normas de fondo + `pegar_fallo_pjud` / `indice_considerandos` (CS)",
+        "3. Cierra el escrito con `anexo_citas`",
+        "",
+        "## Estructura",
+        "### I. Sentencia(s) impugnada(s) e individualización",
+        "### II. Síntesis del proceso (solo hechos aportados)",
+        "### III. Casación en la forma (si se deduce) — causales CPC + desarrollo",
+        "### IV. Casación en el fondo (si se deduce) — errores de derecho",
+        "### V. Jurisprudencia / doctrina (verified vs [POR VERIFICAR])",
         "### VI. Petitorio",
         "### VII. Qué falta verificar",
       );

@@ -60,6 +60,12 @@ export function registerMetaTools(server: McpServer, version: string): void {
               "metadata local — esqueleto de escrito; contenido debe venir de tools verified",
             minuta_cliente:
               "metadata local — estructura de mensaje al cliente a partir del contexto aportado",
+            aviso_desde_causa:
+              "metadata local — minuta de actualización desde campos/movimientos de causa (candidate)",
+            anexo_citas:
+              "metadata local — anexo verified vs por verificar; no inventa citas",
+            comparar_actuaciones:
+              "metadata local — diff de listas de movimientos (candidate)",
             buscar_doctrina: "candidate / metadata OA (no vinculante)",
             buscar_doctrina_latam: "candidate / metadata OA LATAM",
             obtener_doctrina: "candidate / ArticleMeta SciELO-DOI-OpenAlex",

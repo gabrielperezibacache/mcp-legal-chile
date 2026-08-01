@@ -7,6 +7,7 @@ import { registerJurisprudenciaTools } from "./tools/jurisprudencia.js";
 import { registerLegislacionTools } from "./tools/legislacion.js";
 import { registerMetaTools } from "./tools/meta.js";
 import { registerPrompts } from "./tools/prompts.js";
+import { registerStudyResources } from "./tools/resources.js";
 import { registerWorkflowTools } from "./tools/workflow.js";
 
 export const VERSION: string = pkg.version;
@@ -32,6 +33,7 @@ export function createServer(): McpServer {
   registerWorkflowTools(server);
   registerMetaTools(server, VERSION);
   registerPrompts(server);
+  registerStudyResources(server);
 
   return server;
 }

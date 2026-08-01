@@ -40,6 +40,13 @@ function formatCausaMarkdown(causa: CausaPjud): string {
   }
 
   lines.push("", `> ${causa.warning}`);
+  lines.push(
+    "",
+    "### Próximos pasos de estudio",
+    "- Aviso al cliente: `aviso_desde_causa` o `minuta_cliente` (tipo `actualizacion_causa`) con estos datos.",
+    "- Si guardaste un snapshot previo: `comparar_actuaciones`.",
+    "- Si el caratulado sugiere materia normativa: `asesorar` / `investigar_tema` (sin afirmar el estado PJUD como verified).",
+  );
   return lines.join("\n");
 }
 
@@ -81,6 +88,10 @@ function formatCausaSearchMarkdown(response: CausaPjudSearchResponse): string {
     "- Estos datos provienen de scraping no oficial (workaround de CAPTCHA), NO de una API validada por PJUD.",
     "- No afirmes el estado de la causa como definitivo: verifica siempre en el portal antes de actuar.",
     "- No inventes ROL/RIT/RUC/litigantes que no aparezcan explícitamente arriba.",
+    "",
+    "### Flujo sugerido",
+    "- `aviso_desde_causa` → borrador de mensaje al cliente.",
+    "- `comparar_actuaciones` si hay lista anterior de movimientos.",
     "",
   );
   return lines.join("\n");

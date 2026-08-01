@@ -4,7 +4,7 @@ Conector **MCP** libre y gratuito de derecho chileno para Claude, Cursor y apps 
 
 **Licencia:** [MIT](LICENSE) — código abierto  
 **Producción:** https://mcp-legal-chile.onrender.com/mcp  
-**Versión:** 1.16.0
+**Versión:** 1.17.0
 
 ## Proyecto libre
 
@@ -49,6 +49,9 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 | `asesorar` | Plan + pack | Orquesta `flujo_estudio` e `investigar_tema` (memo/escrito/consulta) |
 | `plantilla_escrito` | Esqueleto local | Demanda/recurso por materia (sin inventar citas) |
 | `minuta_cliente` | Esqueleto local | Aviso/resumen/solicitud de antecedentes al cliente |
+| `aviso_desde_causa` | Esqueleto local | Minuta de actualización desde campos/movimientos de causa |
+| `anexo_citas` | Esqueleto local | Anexo verified vs por verificar para el escrito |
+| `comparar_actuaciones` | Diff local | Nuevas / desaparecidas entre dos snapshots de movimientos |
 | `buscar_causa_pjud` / `obtener_causa_pjud` | **Siempre `candidate`** (scraping) | Oficina Judicial Virtual PJUD — **experimental/no oficial**, ver [abajo](#case-tracking-pjud-experimentalno-oficial) |
 
 **Integridad (anti-alucinación):** cada resultado lleva `integrity`:
@@ -69,8 +72,10 @@ Acceso abierto por defecto (sin `MCP_API_KEYS`). Redis es opcional para self-hos
 2. Extrae texto con `citar_texto_legal`, `obtener_articulo`, `obtener_fallo_tc` o `citar_jurisprudencia`.
 3. Fallos PJUD: abre el [portal unificado](https://www.pjud.cl/portal-unificado-sentencias), copia el texto → `indice_considerandos` y/o `pegar_fallo_pjud`.
 4. Dictámenes CGR: `resolver_dictamen` (enlace) → pega el cuerpo en `citar_dictamen_pegado`.
-5. Entregables: `plantilla_escrito` (borrador) o `minuta_cliente` (aviso al cliente).
-6. Prompts: `flujo_estudio`, `plantilla_escrito`, `minuta_cliente`, `pegar_fallo_pjud`, `pegar_dictamen_cgr`, checklists por materia.
+5. Entregables: `plantilla_escrito`, `anexo_citas`, `minuta_cliente` / `aviso_desde_causa`.
+6. Seguimiento: `obtener_causa_pjud` → `comparar_actuaciones` → aviso al cliente.
+7. Resources MCP: `legalchile://guia/memo`, `.../escrito`, `.../seguimiento`, `.../honestidad`.
+8. Prompts: `flujo_estudio`, plantillas, minutas, `pegar_*`, checklists (incluye casación civil).
 
 ## SLOs (objetivos P95)
 

@@ -2,6 +2,12 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { investigarTema } from "../sources/research.js";
 import {
+  compararActuaciones,
+  contextoDesdeCausa,
+  formatAnexoCitas,
+  type CitaAnexoItem,
+} from "../studyExtras.js";
+import {
   ESCRITO_TIPOS,
   MINUTA_TIPOS,
   minutaCliente,
@@ -9,6 +15,17 @@ import {
 } from "../templates.js";
 import { FLUJO_MODOS, planFlujoEstudio, shouldRunPack } from "../workflow.js";
 import { fail, okText, timed } from "./helpers.js";
+
+const citaAnexoSchema = z.object({
+  tipo: z.enum(["norma", "jurisprudencia", "dictamen", "doctrina"]),
+  citation: z.string().min(3),
+  url: z.string().min(8),
+  integrity: z.enum(["verified", "candidate", "portal_stub"]),
+  extracto: z.string().optional(),
+  rol: z.string().optional(),
+  id_norma: z.string().optional(),
+  articulo: z.string().optional(),
+});
 
 export function registerWorkflowTools(server: McpServer): void {
   server.registerTool(
@@ -165,5 +182,139 @@ export function registerWorkflowTools(server: McpServer): void {
           tono,
         }),
       ),
+  );
+
+  server.registerTool(
+    "anexo_citas",
+    {
+      title: "Anexo de citas del escrito",
+      description:
+        "Formatea un anexo/bibliografía separando citas verified vs por verificar. Solo pasa citas ya obtenidas por tools o texto pegado (no inventes).",
+      inputSchema: {
+        titulo: z.string().optional(),
+        citas: z.array(citaAnexoSchema).min(1).max(40),
+      },
+    },
+    async ({ titulo, citas }) => {
+      try {
+        return okText(
+          formatAnexoCitas({
+            titulo,
+            citas: citas as CitaAnexoItem[],
+          }),
+        );
+      } catch (error) {
+        return fail(
+          `Error anexo_citas: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "comparar_actuaciones",
+    {
+      title: "Comparar actuaciones de una causa",
+      description:
+        "Diff entre dos listas de movimientos (una por línea): nuevas / desaparecidas / sin cambio. Útil antes de `minuta_cliente`. Integrity candidate.",
+      inputSchema: {
+        anteriores: z
+          .string()
+          .describe("Snapshot anterior de actuaciones (una por línea)"),
+        actuales: z
+          .string()
+          .describe("Snapshot actual de actuaciones (una por línea)"),
+        rol_o_rit: z.string().optional(),
+        caratulado: z.string().optional(),
+      },
+    },
+    async ({ anteriores, actuales, rol_o_rit, caratulado }) => {
+      try {
+        return okText(
+          compararActuaciones({
+            anteriores,
+            actuales,
+            rol_o_rit,
+            caratulado,
+          }),
+        );
+      } catch (error) {
+        return fail(
+          `Error comparar_actuaciones: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "aviso_desde_causa",
+    {
+      title: "Aviso al cliente desde datos de causa",
+      description:
+        "Arma el contexto de una causa (campos o movimientos pegados) y devuelve la estructura `minuta_cliente` de actualización. No consulta PJUD sola; usa datos aportados o el output de obtener_causa_pjud.",
+      inputSchema: {
+        tribunal: z.string().optional(),
+        rol_o_rit: z.string().optional(),
+        caratulado: z.string().optional(),
+        estado: z.string().optional(),
+        litigantes: z.array(z.string()).optional(),
+        ultima_actuacion: z.string().optional(),
+        movimientos: z
+          .string()
+          .optional()
+          .describe("Movimientos, uno por línea"),
+        url: z.string().optional(),
+        notas: z.string().optional(),
+        destinatario: z.string().optional(),
+        tono: z.enum(["formal", "claro"]).default("claro"),
+      },
+    },
+    async ({
+      tribunal,
+      rol_o_rit,
+      caratulado,
+      estado,
+      litigantes,
+      ultima_actuacion,
+      movimientos,
+      url,
+      notas,
+      destinatario,
+      tono,
+    }) => {
+      try {
+        const contexto = contextoDesdeCausa({
+          tribunal,
+          rol_o_rit,
+          caratulado,
+          estado,
+          litigantes,
+          ultima_actuacion,
+          movimientos,
+          url,
+          notas,
+        });
+        return okText(
+          [
+            minutaCliente({
+              tipo: "actualizacion_causa",
+              contexto,
+              rol_o_rit,
+              caratulado,
+              destinatario,
+              tono,
+            }),
+            "",
+            "### Recordatorio",
+            "- Datos de causa = `candidate`. Verifica en OJV antes de enviar.",
+            "- Si tienes snapshot previo: `comparar_actuaciones` para destacar solo lo nuevo.",
+          ].join("\n"),
+        );
+      } catch (error) {
+        return fail(
+          `Error aviso_desde_causa: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
   );
 }

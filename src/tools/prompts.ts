@@ -359,6 +359,33 @@ export function registerPrompts(server: McpServer): void {
   );
 
   server.registerPrompt(
+    "checklist_recurso_casacion",
+    {
+      title: "Checklist recurso de casación (civil)",
+      description: "CPC + requisitos de casación en el fondo/forma.",
+      argsSchema: { hechos: z.string() },
+    },
+    ({ hechos }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Sentencia / hechos para casación: ${hechos}`,
+              "1) Código de Procedimiento Civil (idNorma 22740): casación en la forma y/o en el fondo — obtener_articulo de causales y plazos",
+              "2) Normas de fondo aplicables vía buscar_legislacion / citar_texto_legal (solo verified)",
+              "3) Jurisprudencia CS: buscar_jurisprudencia → pegar_fallo_pjud / indice_considerandos",
+              "4) Checklist: causal precisa, capítulos de casación, petitorio, preparación del recurso — sin inventar ROL ni considerandos",
+              "5) Opcional: plantilla_escrito tipo generico + anexo_citas con lo verified",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
     "plantilla_escrito",
     {
       title: "Plantilla de escrito chileno",
@@ -371,6 +398,7 @@ export function registerPrompts(server: McpServer): void {
           "juicio_ejecutivo",
           "contencioso_administrativo",
           "recurso_nulidad_penal",
+          "recurso_casacion",
           "escrito_familia",
           "generico",
         ]),
