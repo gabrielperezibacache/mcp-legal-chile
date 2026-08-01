@@ -58,6 +58,101 @@ export const HOT_NORMAS: Array<{
     idNorma: "176595",
     label: "Código Procesal Penal",
   },
+  {
+    aliases: [
+      "codigo organico de tribunales",
+      "código orgánico de tribunales",
+      "cot",
+      "loc tribunales",
+    ],
+    idNorma: "25563",
+    label: "Código Orgánico de Tribunales",
+  },
+  {
+    aliases: [
+      "codigo de comercio",
+      "código de comercio",
+      "cdc comercio",
+      "comercio codigo",
+    ],
+    idNorma: "1974",
+    label: "Código de Comercio",
+  },
+  {
+    aliases: [
+      "codigo tributario",
+      "código tributario",
+      "dl 830",
+      "decreto ley 830",
+    ],
+    idNorma: "6374",
+    label: "Código Tributario (D.L. N° 830)",
+  },
+  {
+    aliases: [
+      "18575",
+      "18.575",
+      "loc bases generales",
+      "bases generales de la administracion",
+      "bases generales de la administración",
+    ],
+    idNorma: "29967",
+    label:
+      "Ley N° 18.575 Orgánica Constitucional de Bases Generales de la Administración del Estado",
+  },
+  {
+    aliases: [
+      "19880",
+      "19.880",
+      "ley de procedimientos administrativos",
+      "procedimiento administrativo",
+      "lbpa",
+    ],
+    idNorma: "210676",
+    label:
+      "Ley N° 19.880 sobre Bases de los Procedimientos Administrativos",
+  },
+  {
+    aliases: [
+      "19947",
+      "19.947",
+      "ley de matrimonio civil",
+      "matrimonio civil",
+    ],
+    idNorma: "225128",
+    label: "Ley N° 19.947 de Matrimonio Civil",
+  },
+  {
+    aliases: [
+      "19968",
+      "19.968",
+      "tribunales de familia",
+      "ley de familia",
+    ],
+    idNorma: "229557",
+    label: "Ley N° 19.968 que Crea los Tribunales de Familia",
+  },
+  {
+    aliases: [
+      "20600",
+      "20.600",
+      "tribunales ambientales",
+      "ley ambiental tribunales",
+    ],
+    idNorma: "1041361",
+    label: "Ley N° 20.600 que Crea los Tribunales Ambientales",
+  },
+  {
+    aliases: [
+      "18101",
+      "18.101",
+      "ley de arrendamiento",
+      "arrendamiento de predios urbanos",
+      "arriendo habitacional",
+    ],
+    idNorma: "29526",
+    label: "Ley N° 18.101 sobre Arrendamiento de Predios Urbanos",
+  },
 ];
 
 export function resolveHotNorma(

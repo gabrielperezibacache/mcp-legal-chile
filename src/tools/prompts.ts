@@ -3,6 +3,52 @@ import { z } from "zod";
 
 export function registerPrompts(server: McpServer): void {
   server.registerPrompt(
+    "flujo_estudio",
+    {
+      title: "Router de flujo de estudio",
+      description:
+        "Elige el camino de tools según el entregable (memo, escrito, seguimiento de causa, cita rápida o consulta).",
+      argsSchema: {
+        modo: z
+          .enum([
+            "memo",
+            "escrito",
+            "seguimiento_causa",
+            "cita_rapida",
+            "consulta",
+          ])
+          .describe("Tipo de entregable del abogado"),
+        consulta: z.string(),
+        rol_o_rit: z.string().optional(),
+        numero_dictamen: z.string().optional(),
+      },
+    },
+    ({ modo, consulta, rol_o_rit, numero_dictamen }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Modo de trabajo: ${modo}`,
+              `Consulta: ${consulta}`,
+              rol_o_rit ? `ROL/RIT: ${rol_o_rit}` : undefined,
+              numero_dictamen ? `Dictamen: ${numero_dictamen}` : undefined,
+              "",
+              "1) Llama la tool `flujo_estudio` con el mismo modo/consulta para obtener el plan de tools.",
+              "2) Ejecuta los pasos del plan en orden. No inventes fuentes.",
+              "3) Entrega el formato indicado por el plan (IRAC, escrito, resumen de causa o cita).",
+              "Fallos PJUD → `pegar_fallo_pjud`. Dictámenes con texto → `citar_dictamen_pegado`.",
+            ]
+              .filter((x): x is string => Boolean(x))
+              .join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
     "consulta_juridica_chile",
     {
       title: "Consulta juridica chilena con fuentes",
@@ -78,6 +124,83 @@ export function registerPrompts(server: McpServer): void {
   );
 
   server.registerPrompt(
+    "pegar_fallo_pjud",
+    {
+      title: "Pegar fallo PJUD y citar",
+      description:
+        "Guía para citar Corte Suprema / Apelaciones / juzgados con texto pegado del portal.",
+      argsSchema: {
+        rol: z.string(),
+        tribunal: z.string().optional(),
+        texto_fallo: z.string(),
+        considerando: z.string().optional(),
+        consulta: z.string().optional(),
+      },
+    },
+    ({ rol, tribunal, texto_fallo, considerando, consulta }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              "Cita el fallo pegado sin inventar considerandos.",
+              `ROL: ${rol}`,
+              tribunal ? `Tribunal: ${tribunal}` : undefined,
+              considerando ? `Considerando pedido: ${considerando}` : undefined,
+              consulta ? `Tema para elegir considerando: ${consulta}` : undefined,
+              "",
+              "Llama `pegar_fallo_pjud` (o `citar_jurisprudencia` con texto) pasando el texto íntegro siguiente.",
+              "Devuelve cita formal + blockquote + integrity. Si el considerando no existe, reporta la lista detectada.",
+              "",
+              "--- TEXTO DEL FALLO ---",
+              texto_fallo,
+            ]
+              .filter((x): x is string => Boolean(x))
+              .join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "pegar_dictamen_cgr",
+    {
+      title: "Pegar dictamen CGR y citar",
+      description:
+        "Guía para citar un dictamen de Contraloría con texto pegado del portal.",
+      argsSchema: {
+        numero: z.string(),
+        texto_dictamen: z.string(),
+        url: z.string().optional(),
+      },
+    },
+    ({ numero, texto_dictamen, url }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              "Cita el dictamen pegado. No inventes resolutivo ni número.",
+              `Número: ${numero}`,
+              url ? `URL: ${url}` : undefined,
+              "",
+              "Llama `citar_dictamen_pegado` con el texto. Si aún no hay texto, usa `resolver_dictamen` (solo enlace).",
+              "",
+              "--- TEXTO DEL DICTAMEN ---",
+              texto_dictamen,
+            ]
+              .filter((x): x is string => Boolean(x))
+              .join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
     "checklist_recurso_proteccion",
     {
       title: "Checklist recurso de proteccion",
@@ -94,7 +217,7 @@ export function registerPrompts(server: McpServer): void {
               `Hechos preliminares: ${hechos}`,
               "Checklist: (1) art. 20 CPR via obtener_articulo idNorma 242302",
               "(2) garantias involucradas art. 19",
-              "(3) buscar_jurisprudencia / buscar_tc; ROL TC -> obtener_fallo_tc / citar_jurisprudencia; PJUD -> pegar texto en citar_jurisprudencia",
+              "(3) buscar_jurisprudencia / buscar_tc; ROL TC -> obtener_fallo_tc / citar_jurisprudencia; PJUD -> pegar_fallo_pjud",
               "(4) lista de pruebas y plazos — sin inventar jurisprudencia",
             ].join("\n"),
           },
@@ -118,10 +241,114 @@ export function registerPrompts(server: McpServer): void {
             type: "text",
             text: [
               `Materia laboral: ${materia}`,
-              "1) buscar_legislacion Codigo del Trabajo / obtener_articulo",
-              "2) buscar_jurisprudencia con filtros",
+              "1) buscar_legislacion Codigo del Trabajo / obtener_articulo (idNorma 207436)",
+              "2) buscar_jurisprudencia con filtros; PJUD -> pegar_fallo_pjud",
               "3) Listar pretensiones y normas citables con URL",
               "No inventes ROL ni montos.",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "checklist_juicio_ejecutivo",
+    {
+      title: "Checklist juicio ejecutivo",
+      description: "Título ejecutivo, CPC y pasos previos a demandar.",
+      argsSchema: { hechos: z.string() },
+    },
+    ({ hechos }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Hechos / título invocado: ${hechos}`,
+              "1) Código de Procedimiento Civil (idNorma 22740): títulos ejecutivos y procedimiento — obtener_articulo de arts. pertinentes",
+              "2) Si hay pagaré/cheque/contrato: contrastar requisitos legales (no inventes cláusulas)",
+              "3) buscar_jurisprudencia acotada; citar solo con texto verificado o pegar_fallo_pjud",
+              "4) Checklist: competencia, liquidación, embargos posibles, excepciones típicas — sin montos inventados",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "checklist_familia",
+    {
+      title: "Checklist materia de familia",
+      description: "Alimentos, cuidado personal u otras materias Ley 19.968.",
+      argsSchema: { materia: z.string() },
+    },
+    ({ materia }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Materia de familia: ${materia}`,
+              "1) Ley 19.968 Tribunales de Familia (idNorma 229557) + Código Civil (idNorma 172986) según corresponda — obtener_articulo",
+              "2) Si hay matrimonio/divorcio: Ley 19.947 (idNorma 225128)",
+              "3) buscar_jurisprudencia; PJUD -> pegar_fallo_pjud",
+              "4) Listar pretensiones, medidas cautelares típicas y prueba — sin inventar ROLs ni montos de pensión",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "checklist_contencioso_administrativo",
+    {
+      title: "Checklist contencioso-administrativo / CGR",
+      description: "Acto administrativo, 19.880/18.575 y dictámenes.",
+      argsSchema: { hechos: z.string() },
+    },
+    ({ hechos }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Hechos / acto impugnado: ${hechos}`,
+              "1) Ley 19.880 (idNorma 210676) y Ley 18.575 (idNorma 29967) — obtener_articulo de plazos, invalidación, recursos",
+              "2) buscar_dictamenes / resolver_dictamen; con texto pegado -> citar_dictamen_pegado",
+              "3) buscar_administrativo si hay superintendencia (portal_stub: no afirmar contenido)",
+              "4) Lista: acto, vicios alegados, plazos, prueba documental — sin inventar dictámenes",
+            ].join("\n"),
+          },
+        },
+      ],
+    }),
+  );
+
+  server.registerPrompt(
+    "checklist_recurso_nulidad_penal",
+    {
+      title: "Checklist recurso de nulidad penal",
+      description: "CPP + causales a verificar antes de redactar.",
+      argsSchema: { hechos: z.string() },
+    },
+    ({ hechos }) => ({
+      messages: [
+        {
+          role: "user",
+          content: {
+            type: "text",
+            text: [
+              `Hechos / sentencia impugnada: ${hechos}`,
+              "1) Código Procesal Penal (idNorma 176595): causales y plazos de nulidad — obtener_articulo",
+              "2) Si hay tipicidad/pena: Código Penal (idNorma 1984) según corresponda",
+              "3) buscar_jurisprudencia / pegar_fallo_pjud para CS/CA",
+              "4) Checklist: causal invocada, petitorio, puntos de hecho vs derecho — sin inventar ROL ni considerandos",
             ].join("\n"),
           },
         },

@@ -171,7 +171,7 @@ export function registerJurisprudenciaTools(server: McpServer): void {
     {
       title: "Citar fragmento exacto de jurisprudencia",
       description:
-        "Cita formal (tribunal, tipo, ROL, ano, considerando) + blockquote. Sin texto: API gratuita TC (si el ROL no esta indexado, usa el resumen oficial de ficha e integridad=candidate; rechaza considerando en ese caso para no inventar). Con texto pegado: fallos PJUD u otros (sin APIs de pago).",
+        "Cita formal (tribunal, tipo, ROL, ano, considerando) + blockquote. Sin texto: API gratuita TC (si el ROL no esta indexado, usa el resumen oficial de ficha e integridad=candidate; rechaza considerando en ese caso para no inventar). Con texto pegado: fallos PJUD u otros (sin APIs de pago). Para el flujo guiado PJUD preferir `pegar_fallo_pjud`.",
       inputSchema: {
         rol: z.string().min(3).describe("ROL, ej. 9666-2020 o 12345-2020"),
         texto: z
@@ -242,6 +242,79 @@ export function registerJurisprudenciaTools(server: McpServer): void {
       } catch (error) {
         return fail(
           `Error citar_jurisprudencia: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "pegar_fallo_pjud",
+    {
+      title: "Pegar fallo PJUD y citar",
+      description:
+        "Flujo de estudio para CS/CA/juzgados: requiere texto pegado del Portal Unificado / OJV. Parsea considerandos, cita formal + blockquote. Rechaza considerando inexistente. Equivale a citar_jurisprudencia con texto obligatorio.",
+      inputSchema: {
+        rol: z.string().min(3).describe("ROL, ej. 12345-2020"),
+        texto: z
+          .string()
+          .min(80)
+          .describe("Texto íntegro o considerandos pegados del fallo"),
+        tribunal: z
+          .string()
+          .optional()
+          .describe("Ej. Corte Suprema; se infiere del texto si falta"),
+        tipo_resolucion: z.string().optional().describe("Ej. Sentencia, Auto"),
+        anio: z.string().optional(),
+        url: z.string().optional().describe("URL oficial del fallo"),
+        considerando: z
+          .string()
+          .optional()
+          .describe("Numero o rotulo: 15, 15o, decimo quinto"),
+        consulta: z
+          .string()
+          .optional()
+          .describe("Palabras clave para elegir el considerando"),
+        max_chars: z
+          .number()
+          .int()
+          .min(200)
+          .max(8000)
+          .default(2500),
+        formato: formatoSchema,
+      },
+    },
+    async ({
+      rol,
+      texto,
+      tribunal,
+      tipo_resolucion,
+      anio,
+      url,
+      considerando,
+      consulta,
+      max_chars,
+      formato,
+    }) => {
+      try {
+        const quote = await timedSearch("pegar_fallo_pjud", (signal) =>
+          citarJurisprudencia({
+            rol,
+            texto,
+            tribunal,
+            tipoResolucion: tipo_resolucion,
+            anio,
+            url,
+            considerando,
+            consulta,
+            maxChars: max_chars,
+            signal,
+          }),
+        );
+        if (formato === "json") return okText(formatResultsJson(quote));
+        return okText(quote.markdown);
+      } catch (error) {
+        return fail(
+          `Error pegar_fallo_pjud: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     },

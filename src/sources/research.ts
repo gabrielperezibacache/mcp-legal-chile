@@ -142,6 +142,24 @@ export async function investigarTema(
       pending.push("obtener_fallo_tc (presupuesto agotado)");
     }
 
+    const verifiedItems: string[] = [];
+    const candidateItems: string[] = [];
+    const portalItems: string[] = [];
+    const nextSteps: string[] = [];
+
+    const pushClassified = (
+      r: SearchResponse["results"][number],
+      label: string,
+    ) => {
+      const integrity = integrityOf(r);
+      const line = `- [${label}] **${r.title}** — ${r.url} (\`${integrity}\`${r.evidence ? `, ${r.evidence}` : ""})`;
+      if (integrity === "verified") verifiedItems.push(line);
+      else if (integrity === "portal_stub") portalItems.push(line);
+      else candidateItems.push(line);
+      const next = nextStepFor(r);
+      if (next) nextSteps.push(`- ${next}`);
+    };
+
     const sections: string[] = [
       `# Pack de investigación`,
       "",
@@ -149,12 +167,15 @@ export async function investigarTema(
       "",
       `_Presupuesto ${totalMs}ms · resultados parciales OK. Usa solo lo listado. Prohibido inventar fallos, dictámenes, artículos o considerandos._`,
       "",
+      "_Formato fijo: (1) fuentes por área → (2) clasificación Verificado / Por verificar / Portales → (3) Próximos pasos._",
+      "",
     ];
 
     sections.push("## 1. Marco normativo");
     if (leg.status === "fulfilled") {
       if (leg.value.results.length) {
         for (const r of leg.value.results) {
+          pushClassified(r, "legislación");
           sections.push(`- **${r.title}**`);
           sections.push(`  - Cita: ${r.citation}`);
           if (r.id) sections.push(`  - idNorma: \`${r.id}\``);
@@ -162,6 +183,9 @@ export async function investigarTema(
           if (r.id) {
             sections.push(
               `  - → \`citar_texto_legal\` / \`obtener_articulo\` con idNorma \`${r.id}\``,
+            );
+            nextSteps.push(
+              `- Obtener texto: \`citar_texto_legal\` / \`obtener_articulo\` idNorma \`${r.id}\`.`,
             );
           }
         }
@@ -203,7 +227,7 @@ export async function investigarTema(
           packController.signal,
         );
         const art = findArticulo(norma, articulo);
-        if (art) {
+          if (art) {
           const quote = truncateArticleQuote(art.texto, articleQuoteChars);
           const artLines = [
             `**${norma.tipo ?? "Norma"} ${norma.numero}, art. ${art.numero}** — ${norma.titulo}`,
@@ -219,6 +243,9 @@ export async function investigarTema(
             );
           }
           sections.push(...artLines);
+          verifiedItems.push(
+            `- [legislación] **${norma.tipo ?? "Norma"} ${norma.numero}, art. ${art.numero}** — ${art.url} (\`verified\`, full_text)`,
+          );
         } else {
           sections.push(
             `No se encontró art. ${articulo}. Índice: ${norma.articulos
@@ -290,6 +317,12 @@ export async function investigarTema(
             "",
             "→ Más detalle / PDF: `obtener_fallo_tc`. Cita por considerando: `citar_jurisprudencia`.",
           );
+          verifiedItems.push(
+            `- [jurisprudencia TC] **${falloTc.citation}** — ${falloTc.url} (\`verified\`)`,
+          );
+          nextSteps.push(
+            `- Citar considerando: \`citar_jurisprudencia\` con rol \`${normalizeRol(rolMention).display}\`.`,
+          );
         }
         if (rolResolved.warnings.length) {
           sections.push(
@@ -330,6 +363,7 @@ export async function investigarTema(
         return;
       }
       for (const r of sealed.results.slice(0, limitePorFuente)) {
+        pushClassified(r, label);
         const integrity = integrityOf(r);
         sections.push(`- **${r.title}**`);
         sections.push(`  - Cita: ${r.citation}`);
@@ -367,7 +401,40 @@ export async function investigarTema(
     dumpSource("4. Doctrina académica (no vinculante)", doc, "doctrina");
 
     const elapsed = Date.now() - startedAt;
-    sections.push("", "## 5. Lagunas / verificación pendiente");
+    const uniq = (items: string[]) => [...new Set(items)];
+
+    sections.push("", "## 5. Clasificación por integridad");
+    sections.push("", "### Verificado");
+    sections.push(
+      ...(uniq(verifiedItems).slice(0, 12).length
+        ? uniq(verifiedItems).slice(0, 12)
+        : [
+            "- _(Vacío en este pack.) Baja a `citar_texto_legal` / `obtener_fallo_tc` / texto pegado._",
+          ]),
+    );
+    sections.push("", "### Por verificar");
+    sections.push(
+      ...(uniq(candidateItems).slice(0, 12).length
+        ? uniq(candidateItems).slice(0, 12)
+        : ["- _(Ningún candidato en este pack.)_"]),
+    );
+    sections.push("", "### Portales sugeridos");
+    sections.push(
+      ...(uniq(portalItems).slice(0, 8).length
+        ? uniq(portalItems).slice(0, 8)
+        : ["- _(Ningún portal_stub en este pack.)_"]),
+    );
+
+    sections.push("", "## 6. Próximos pasos");
+    const defaultNext = [
+      "- Confirma vigencia en LeyChile antes de asesorar.",
+      "- Fallos PJUD: pega el texto en `pegar_fallo_pjud` (o `citar_jurisprudencia` con `texto`).",
+      "- Dictámenes CGR: pega el texto en `citar_dictamen_pegado` tras `resolver_dictamen`.",
+      "- Para estructurar el entregable: `flujo_estudio` (modos memo/escrito/seguimiento_causa/cita_rapida).",
+    ];
+    sections.push(...uniq(nextSteps).slice(0, 8), ...defaultNext);
+
+    sections.push("", "## 7. Lagunas / verificación pendiente");
     if (pending.length) {
       sections.push(
         `- Fuentes incompletas por timeout/error (respuesta parcial OK): ${pending.join(", ")}. Puedes consultar cada fuente con su tool dedicada.`,
@@ -375,9 +442,7 @@ export async function investigarTema(
     }
     sections.push(
       `- Tiempo pack: ${elapsed}ms (tope ${totalMs}ms).`,
-      "- Confirma vigencia en LeyChile antes de asesorar.",
       "- No cites ratio decidendi desde títulos de links (evidence=link_only / portal_stub).",
-      "- Fallos PJUD: pega el texto en `citar_jurisprudencia` (sin API abierta del Poder Judicial).",
       "- Doctrina: metadata OA (no vinculante); preferir LeyChile para normas.",
       "- Si una sección dice «Sin hallazgos», no completes con memoria ni fuentes no listadas.",
       "- Este pack no constituye asesoría jurídica formal.",

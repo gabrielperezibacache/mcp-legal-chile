@@ -38,6 +38,10 @@ export {
   PjudCausasTimeoutError,
   type BuscarCausaTipoPersona,
 } from "./pjudCauses.js";
+export {
+  citarDictamenPegado,
+  type DictamenQuote,
+} from "./dictamenQuote.js";
 
 export {
   citarJurisprudencia,

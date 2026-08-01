@@ -7,6 +7,7 @@ import { registerJurisprudenciaTools } from "./tools/jurisprudencia.js";
 import { registerLegislacionTools } from "./tools/legislacion.js";
 import { registerMetaTools } from "./tools/meta.js";
 import { registerPrompts } from "./tools/prompts.js";
+import { registerWorkflowTools } from "./tools/workflow.js";
 
 export const VERSION: string = pkg.version;
 
@@ -28,6 +29,7 @@ export function createServer(): McpServer {
   registerDoctrinaTools(server);
   registerDictamenesTools(server);
   registerCausasTools(server);
+  registerWorkflowTools(server);
   registerMetaTools(server, VERSION);
   registerPrompts(server);
 

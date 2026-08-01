@@ -38,14 +38,20 @@ export function registerMetaTools(server: McpServer, version: string): void {
               "verified extracto + índice considerandos; candidate (solo ficha/doctrina, evidence=metadata) si el ROL no está en el índice de texto TC",
             citar_jurisprudencia:
               "verified (full_text) si TC indexado o texto pegado; candidate (resumen ficha / evidence=metadata) si el ROL no está en el índice de texto TC; rechaza considerando inexistente",
+            pegar_fallo_pjud:
+              "verified sobre texto aportado (PJUD/CS/CA); requiere texto pegado; rechaza considerando inexistente",
             buscar_dictamenes: "candidate / link_only (verificar CGR)",
             resolver_dictamen: "candidate / link_only por número CGR",
+            citar_dictamen_pegado:
+              "verified sobre texto aportado (CGR); requiere texto pegado del portal",
             buscar_administrativo:
               "portal_stub / link_only (CMF, Super Salud, SUSESO, SEC, SUPERIR)",
             buscar_derecho_chileno:
               "pack mixto parcial OK (~8s); integrity por resultado",
             investigar_tema:
-              "pack mixto parcial OK (~18s); integrity por sección; no inventa vacíos",
+              "pack mixto parcial OK (~18s); secciones Verificado/Por verificar/Portales + Próximos pasos; no inventa vacíos",
+            flujo_estudio:
+              "metadata local — plan de tools por modo (memo/escrito/seguimiento_causa/cita_rapida/consulta)",
             buscar_doctrina: "candidate / metadata OA (no vinculante)",
             buscar_doctrina_latam: "candidate / metadata OA LATAM",
             obtener_doctrina: "candidate / ArticleMeta SciELO-DOI-OpenAlex",
