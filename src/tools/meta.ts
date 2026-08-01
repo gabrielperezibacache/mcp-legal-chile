@@ -1,4 +1,5 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { FLUJO_CATALOG } from "../catalogFlujo.js";
 import { ANTI_HALLUCINATION_RULES } from "../integrity.js";
 import { metrics } from "../metrics.js";
 import { formatResultsJson } from "../util.js";
@@ -9,7 +10,8 @@ export function registerMetaTools(server: McpServer, version: string): void {
     "acerca_de",
     {
       title: "Acerca de MCP Legal Chile",
-      description: "Catálogo, matriz de honestidad y SLOs.",
+      description:
+        "Catálogo de flujos de estudio, matriz de honestidad y SLOs. Para el mapa narrativo usa también `catalogo_flujos`.",
       inputSchema: {},
     },
     async () =>
@@ -17,6 +19,7 @@ export function registerMetaTools(server: McpServer, version: string): void {
         formatResultsJson({
           name: "MCP Legal Chile",
           version,
+          workflows: FLUJO_CATALOG,
           honestyMatrix: {
             buscar_legislacion: "candidate / metadata BCN + buscador LeyChile",
             obtener_norma: "candidate / metadata BCN",
@@ -66,6 +69,11 @@ export function registerMetaTools(server: McpServer, version: string): void {
               "metadata local — anexo verified vs por verificar; no inventa citas",
             comparar_actuaciones:
               "metadata local — diff de listas de movimientos (candidate)",
+            catalogo_flujos: "metadata local — mapa de flujos y tools",
+            lista_antecedentes:
+              "metadata local — checklist de documentos a pedir al cliente",
+            preparar_entregable:
+              "plan + plantilla + antecedentes + pack investigar_tema (memo/escrito)",
             buscar_doctrina: "candidate / metadata OA (no vinculante)",
             buscar_doctrina_latam: "candidate / metadata OA LATAM",
             obtener_doctrina: "candidate / ArticleMeta SciELO-DOI-OpenAlex",

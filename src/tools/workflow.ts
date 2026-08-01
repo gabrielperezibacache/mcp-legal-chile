@@ -1,5 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import {
+  ANTECEDENTE_MATERIAS,
+  formatCatalogoFlujos,
+  listaAntecedentes,
+  mapEscritoToAntecedentes,
+} from "../catalogFlujo.js";
 import { investigarTema } from "../sources/research.js";
 import {
   compararActuaciones,
@@ -28,6 +34,33 @@ const citaAnexoSchema = z.object({
 });
 
 export function registerWorkflowTools(server: McpServer): void {
+  server.registerTool(
+    "catalogo_flujos",
+    {
+      title: "Catálogo de flujos de estudio",
+      description:
+        "Lista los flujos recomendados (memo, escrito, seguimiento, citas PJUD/CGR, antecedentes) con tools y resources. Útil cuando el cliente MCP no muestra prompts.",
+      inputSchema: {},
+    },
+    async () => okText(formatCatalogoFlujos()),
+  );
+
+  server.registerTool(
+    "lista_antecedentes",
+    {
+      title: "Lista de antecedentes a pedir al cliente",
+      description:
+        "Checklist orientativa de documentos/datos a solicitar según materia (laboral, protección, ejecutivo, familia, penal, administrativo, civil, consumidor). No afirma que el cliente ya los tenga.",
+      inputSchema: {
+        materia: z.enum(ANTECEDENTE_MATERIAS),
+        hechos: z.string().optional(),
+        urgencia: z.string().optional(),
+      },
+    },
+    async ({ materia, hechos, urgencia }) =>
+      okText(listaAntecedentes({ materia, hechos, urgencia })),
+  );
+
   server.registerTool(
     "flujo_estudio",
     {
@@ -136,11 +169,101 @@ export function registerWorkflowTools(server: McpServer): void {
   );
 
   server.registerTool(
+    "preparar_entregable",
+    {
+      title: "Preparar entregable (plan + plantilla + pack)",
+      description:
+        "Orquesta el inicio de un memo o escrito: plan de flujo, plantilla (si escrito), lista de antecedentes sugerida y, por defecto, pack `investigar_tema`. Luego baja a texto verified y usa `anexo_citas`.",
+      inputSchema: {
+        modo: z.enum(["memo", "escrito"]).default("escrito"),
+        consulta: z.string().min(2),
+        tipo_escrito: z.enum(ESCRITO_TIPOS).optional(),
+        hechos: z.string().optional(),
+        ejecutar_pack: z.boolean().default(true),
+        limite_por_fuente: z.number().int().min(1).max(8).default(2),
+      },
+    },
+    async ({
+      modo,
+      consulta,
+      tipo_escrito,
+      hechos,
+      ejecutar_pack,
+      limite_por_fuente,
+    }) => {
+      try {
+        const tipo = tipo_escrito ?? "generico";
+        const plan = planFlujoEstudio({ modo, consulta });
+        const sections: string[] = [
+          `# Preparar entregable — modo \`${modo}\``,
+          "",
+          plan,
+        ];
+
+        if (modo === "escrito") {
+          sections.push(
+            "",
+            "---",
+            "",
+            plantillaEscrito({
+              tipo,
+              materia: consulta,
+              hechos,
+            }),
+          );
+        }
+
+        sections.push(
+          "",
+          "---",
+          "",
+          listaAntecedentes({
+            materia: mapEscritoToAntecedentes(
+              modo === "escrito" ? tipo : undefined,
+            ),
+            hechos: hechos ?? consulta,
+          }),
+        );
+
+        if (ejecutar_pack) {
+          const pack = await timed("preparar_entregable.investigar_tema", () =>
+            investigarTema(consulta, limite_por_fuente),
+          );
+          sections.push(
+            "",
+            "---",
+            "",
+            "## Pack de investigación",
+            "",
+            pack,
+            "",
+            "### Continuación",
+            "- Extrae texto verified y arma `anexo_citas`.",
+            "- Redacta sobre la plantilla; marca `[POR VERIFICAR]` lo no verified.",
+            "- Si faltan documentos: `minuta_cliente` tipo `solicitud_antecedentes`.",
+          );
+        } else {
+          sections.push(
+            "",
+            "_Pack omitido (`ejecutar_pack=false`). Llama `investigar_tema` o `asesorar` cuando quieras fuentes._",
+          );
+        }
+
+        return okText(sections.join("\n"));
+      } catch (error) {
+        return fail(
+          `Error preparar_entregable: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
     "plantilla_escrito",
     {
       title: "Plantilla estructural de escrito",
       description:
-        "Devuelve el esqueleto de un escrito chileno (demanda laboral, protección, ejecutivo, contencioso-administrativo, nulidad penal, familia o genérico) con tools sugeridas. No inventa hechos ni citas.",
+        "Devuelve el esqueleto de un escrito chileno (demanda laboral, protección, ejecutivo, contencioso-administrativo, nulidad penal, casación, familia o genérico) con tools sugeridas. No inventa hechos ni citas.",
       inputSchema: {
         tipo: z.enum(ESCRITO_TIPOS),
         materia: z.string().optional(),

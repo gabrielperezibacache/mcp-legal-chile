@@ -35,9 +35,9 @@ export function registerPrompts(server: McpServer): void {
               rol_o_rit ? `ROL/RIT: ${rol_o_rit}` : undefined,
               numero_dictamen ? `Dictamen: ${numero_dictamen}` : undefined,
               "",
-              "1) Prefiere la tool `asesorar` (plan + pack) o `flujo_estudio` (solo plan).",
+              "1) Prefiere `preparar_entregable` (escrito/memo), `asesorar` (plan+pack) o `catalogo_flujos`.",
               "2) Ejecuta los pasos del plan en orden. No inventes fuentes.",
-              "3) Entrega el formato indicado (IRAC, escrito vía `plantilla_escrito`, resumen vía `minuta_cliente`, o cita).",
+              "3) Entrega el formato indicado (IRAC, escrito, minuta o cita).",
               "Fallos PJUD → `indice_considerandos` / `pegar_fallo_pjud`. Dictámenes → `citar_dictamen_pegado`.",
             ]
               .filter((x): x is string => Boolean(x))

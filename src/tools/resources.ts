@@ -57,10 +57,12 @@ const GUIDES: Record<
         ...ANTI_HALLUCINATION_RULES.map((r) => `- ${r}`),
         "",
         "## Atajos de flujo",
-        "- Investigación: `asesorar`",
+        "- Mapa: `catalogo_flujos`",
+        "- Memo/escrito: `preparar_entregable` / `asesorar`",
         "- PJUD texto: `indice_considerandos` → `pegar_fallo_pjud`",
         "- CGR texto: `citar_dictamen_pegado`",
         "- Entregables: `plantilla_escrito`, `minuta_cliente`, `anexo_citas`",
+        "- Carpeta: `lista_antecedentes`",
       ].join("\n"),
   },
 };

@@ -75,12 +75,35 @@ async function main() {
       "resolver_rol",
       "obtener_fallo_tc",
       "estado_norma",
+      "asesorar",
+      "preparar_entregable",
+      "catalogo_flujos",
+      "lista_antecedentes",
+      "pegar_fallo_pjud",
+      "citar_dictamen_pegado",
+      "anexo_citas",
+      "aviso_desde_causa",
     ]) {
       if (!names.includes(required)) throw new Error(`missing ${required}`);
     }
     ok(`tools/list (${names.length})`);
   } catch (e) {
     fail("tools/list", e);
+  }
+
+  try {
+    const result = await mcp(
+      "tools/call",
+      { name: "catalogo_flujos", arguments: {} },
+      21,
+    );
+    const text = result.content?.[0]?.text ?? "";
+    if (!/Catálogo de flujos/i.test(text) || !/asesorar/.test(text)) {
+      throw new Error(text.slice(0, 200));
+    }
+    ok("catalogo_flujos");
+  } catch (e) {
+    fail("catalogo_flujos", e);
   }
 
   try {
