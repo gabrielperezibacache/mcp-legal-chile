@@ -13,6 +13,7 @@ import {
   UnsupportedNormaStructureError,
 } from "../sources/normaTexto.js";
 import { CircuitOpenError } from "../upstream.js";
+import { HttpStatusError } from "../util.js";
 
 /** Must exceed TC keyword latency (often 6–14s) without cascading into slow web scrape. */
 export const SEARCH_TOOL_TIMEOUT_MS = Number(
@@ -185,7 +186,64 @@ export function legalExtractionFailure(error: unknown, idNorma: string) {
       ].join("\n"),
     );
   }
+  if (error instanceof HttpStatusError) {
+    const status = error.status;
+    const kind =
+      status === 401
+        ? "HTTP 401 (no autorizado / CloudFront u otro WAF)"
+        : status === 403
+          ? "HTTP 403 (prohibido / bloqueo de borde)"
+          : status === 404
+            ? "HTTP 404 (norma o recurso no encontrado)"
+            : status === 429
+              ? "HTTP 429 (rate limit)"
+              : `HTTP ${status}`;
+    return okText(
+      [
+        `LeyChile/BCN respondió ${kind}.`,
+        status === 404
+          ? "El idNorma probablemente no existe o fue retirado. No inventes el texto."
+          : "La fuente oficial bloqueó o no autorizó la descarga automática. Abre la URL manualmente; no inventes el texto.",
+        `Fuente oficial: ${official}`,
+        `XML: ${xml}`,
+        `Detalle: ${error.message}`,
+      ].join("\n"),
+    );
+  }
   const msg = error instanceof Error ? error.message : String(error);
+  if (/HTTP\s*401/i.test(msg)) {
+    return okText(
+      [
+        "LeyChile/BCN respondió HTTP 401 (no autorizado / CloudFront u otro WAF).",
+        "Abre la URL oficial manualmente; no inventes el texto.",
+        `Fuente oficial: ${official}`,
+        `XML: ${xml}`,
+        `Detalle: ${msg}`,
+      ].join("\n"),
+    );
+  }
+  if (/HTTP\s*403/i.test(msg)) {
+    return okText(
+      [
+        "LeyChile/BCN respondió HTTP 403 (prohibido / bloqueo de borde).",
+        "Abre la URL oficial manualmente; no inventes el texto.",
+        `Fuente oficial: ${official}`,
+        `XML: ${xml}`,
+        `Detalle: ${msg}`,
+      ].join("\n"),
+    );
+  }
+  if (/HTTP\s*404/i.test(msg)) {
+    return okText(
+      [
+        "LeyChile/BCN respondió HTTP 404 (norma o recurso no encontrado).",
+        "El idNorma probablemente no existe. No inventes el texto.",
+        `Fuente oficial: ${official}`,
+        `XML: ${xml}`,
+        `Detalle: ${msg}`,
+      ].join("\n"),
+    );
+  }
   if (
     /fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|socket|network|aborted|Timeout|HTTP 5\d\d|UND_ERR/i.test(
       msg,

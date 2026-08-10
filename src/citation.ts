@@ -144,16 +144,32 @@ export function formatChileanCitation(input: ChileanCitationInput): {
   }
 
   const parts: string[] = [];
-  const tipo = input.tipo?.trim() || "Norma";
-  if (input.numero) {
-    const num = input.numero.includes(".")
-      ? input.numero
-      : input.numero.replace(/^(\d{1,2})(\d{3})$/, "$1.$2");
-    parts.push(`${tipo} N° ${num}`);
-  } else if (input.titulo) {
-    parts.push(input.titulo);
+  const tipoRaw = input.tipo?.trim() || "Norma";
+  const titulo = input.titulo?.trim();
+  const numeroRaw = input.numero?.trim();
+  const numeroIsNumeric = Boolean(numeroRaw && /^\d/.test(numeroRaw));
+
+  if (titulo && /c[oó]digo\s+(civil|penal|del\s+trabajo|de\s+comercio)/i.test(titulo)) {
+    parts.push(titulo.match(/c[oó]digo\s+[^\d,(]+/i)?.[0]?.trim() ?? titulo);
+  } else if (numeroRaw && !numeroIsNumeric) {
+    // tipo="Código" + numero="PENAL" → "Código Penal" (never "Código N° PENAL")
+    const code = /c[oó]digo/i.test(tipoRaw)
+      ? `Código ${numeroRaw}`
+      : `${tipoRaw} ${numeroRaw}`;
+    parts.push(code.replace(/\s+/g, " ").trim());
+  } else if (numeroRaw && numeroIsNumeric) {
+    const num = numeroRaw.includes(".")
+      ? numeroRaw
+      : numeroRaw.replace(/^(\d{1,2})(\d{3})$/, "$1.$2");
+    if (titulo && /c[oó]digo\s+civil/i.test(titulo)) {
+      parts.push(`Código Civil (${tipoRaw} N° ${num})`);
+    } else {
+      parts.push(`${tipoRaw} N° ${num}`);
+    }
+  } else if (titulo) {
+    parts.push(titulo);
   } else {
-    parts.push(tipo);
+    parts.push(tipoRaw);
   }
 
   if (input.articulo) {

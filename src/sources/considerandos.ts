@@ -43,14 +43,17 @@ const TENS: Record<string, number> = {
 const ORDINAL_TOKEN =
   "(?:PRIMERO|SEGUNDO|TERCERO|CUARTO|QUINTO|SEXTO|S[ÉE]PTIMO|OCTAVO|NOVENO|D[ÉE]CIM[OA]|UND[ÉE]CIM[OA]|DUOD[ÉE]CIM[OA]|VIG[ÉE]SIM[OA]|TRIG[ÉE]SIM[OA]|CUADRAG[ÉE]SIM[OA]|QUINCUAG[ÉE]SIM[OA]|SEXAG[ÉE]SIM[OA]|SEPTUAG[ÉE]SIM[OA]|OCTOG[ÉE]SIM[OA]|NONAG[ÉE]SIM[OA]|CENT[ÉE]SIM[OA])";
 
+/** Hard cap: page/OCR numbers like 787 must never become considerandos. */
+export const MAX_CONSIDERANDO_NUMERO = 120;
+
 const HEADER_RE = new RegExp(
   `(?:^|\\n)\\s*(?:` +
     // Word ordinals: DÉCIMO QUINTO:
     `((?:${ORDINAL_TOKEN}(?:\\s+${ORDINAL_TOKEN}){0,3}))\\s*:\\s*` +
-    // Arabic: 15º.- / 15.- / 15° :
-    `|(\\d{1,3})\\s*[°ºo]?\\s*[.\\-–—:)]\\s*` +
-    // "Considerando décimo quinto:" / "Considerando 15:"
-    `|Considerando\\s+((?:${ORDINAL_TOKEN}(?:\\s+${ORDINAL_TOKEN}){0,3})|\\d{1,3}\\s*[°ºo]?)\\s*:\\s*` +
+    // Arabic with ordinal mark: 15º.- / 15° : / 15º)
+    `|(\\d{1,3})\\s*[°º]\\s*(?:[.\\-–—:)]\\s*)+` +
+    // "Considerando décimo quinto:" / "Considerando 15:" / "Considerando 15º:"
+    `|Considerando\\s+((?:${ORDINAL_TOKEN}(?:\\s+${ORDINAL_TOKEN}){0,3})|\\d{1,3}\\s*[°º]?)\\s*:\\s*` +
     `)`,
   "gi",
 );
@@ -157,13 +160,18 @@ export function parseConsiderandoRef(ref: string): {
   const num = raw.match(
     /(?:^|[^\p{L}])(?:c(?:onsiderando)?\.?\s*)?(\d{1,3})\s*[°ºo.]?\b/iu,
   );
-  if (num?.[1]) return { numero: Number(num[1]) };
+  if (num?.[1]) {
+    const n = Number(num[1]);
+    if (n < 1 || n > MAX_CONSIDERANDO_NUMERO) return {};
+    return { numero: n };
+  }
   const words = raw
     .replace(/^(?:considerando|c\.)\s+/i, "")
     .replace(/[°º.]/g, "")
     .trim();
   const n = ordinalWordsToNumber(words);
-  if (n) return { numero: n, label: words };
+  if (n && n <= MAX_CONSIDERANDO_NUMERO) return { numero: n, label: words };
+  if (n && n > MAX_CONSIDERANDO_NUMERO) return {};
   return { label: words };
 }
 
@@ -206,12 +214,14 @@ export function parseConsiderandos(text: string): Considerando[] {
       label = wordLabel;
       numero = ordinalWordsToNumber(label);
     } else if (arabicNum != null && Number.isFinite(arabicNum)) {
+      if (arabicNum < 1 || arabicNum > MAX_CONSIDERANDO_NUMERO) continue;
       numero = arabicNum;
       label =
         numberToOrdinalWords(arabicNum)?.toUpperCase() ?? String(arabicNum);
     } else if (consRef) {
       const parsed = parseConsiderandoRef(consRef);
       numero = parsed.numero;
+      if (numero != null && numero > MAX_CONSIDERANDO_NUMERO) continue;
       label =
         (numero ? numberToOrdinalWords(numero)?.toUpperCase() : undefined) ??
         consRef;
@@ -222,8 +232,18 @@ export function parseConsiderandos(text: string): Considerando[] {
     const start = match.index! + match[0].length;
     const end =
       i + 1 < matches.length ? matches[i + 1]!.index! : section.length;
-    const texto = cleanConsiderandoText(section.slice(start, end));
+    const texto = cleanConsiderandoText(section.slice(start, end)).replace(
+      /^[-–—.:)\s]+/,
+      "",
+    );
     if (texto.length < 30) continue;
+    // Chilean style: real considerings usually start with "Que"
+    const looksLikeConsidering = /^\s*Que\b/i.test(texto);
+    const fromWordOrdinal = Boolean(wordLabel);
+    if (!looksLikeConsidering && !fromWordOrdinal && arabicNum != null) {
+      // Arabic page markers without "Que…" are almost always OCR noise.
+      continue;
+    }
     const dedupeKey = numero ? `n:${numero}` : `l:${key}`;
     if (seen.has(dedupeKey)) continue;
     seen.add(dedupeKey);
@@ -237,7 +257,21 @@ export function parseConsiderandos(text: string): Considerando[] {
       texto,
     });
   }
-  return out;
+  // Drop arabic-only outliers that jump far above a coherent sequence.
+  const maxSequential = out.reduce((m, c) => {
+    if (c.numero == null) return m;
+    if (m === 0) return c.numero;
+    if (c.numero <= m + 5) return Math.max(m, c.numero);
+    return m;
+  }, 0);
+  return out.filter((c) => {
+    if (c.numero == null) return true;
+    if (c.numero <= MAX_CONSIDERANDO_NUMERO && c.numero <= Math.max(maxSequential, 40)) {
+      return true;
+    }
+    // Keep ordinal-word items even if sequence is sparse
+    return !/^\d+$/.test(c.label);
+  });
 }
 
 export function findConsiderando(

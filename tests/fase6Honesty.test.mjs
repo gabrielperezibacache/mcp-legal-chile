@@ -52,15 +52,26 @@ test("sealSearchResponse no deja verified sin texto", () => {
         source: "dictamenes",
         title: "Real verified",
         citation: "y",
-        url: "https://example.test/e",
+        url: "https://www.contraloria.cl/web/cgr/dictamenes?id=1",
         evidence: "full_text",
         summary:
           "Cuerpo HTML recuperado con contenido suficiente para citar el extracto oficial.",
+        metadata: { integrity: "verified" },
+      },
+      {
+        source: "dictamenes",
+        title: "Off-domain fake",
+        citation: "z",
+        url: "https://dle.rae.es/dictamen",
+        evidence: "full_text",
+        summary:
+          "Texto largo de diccionario que no debe pasar como dictamen oficial verified.",
         metadata: { integrity: "verified" },
       },
     ],
   });
   assert.equal(integrityOf(sealed.results[0]), "candidate");
   assert.equal(integrityOf(sealed.results[1]), "verified");
+  assert.equal(integrityOf(sealed.results[2]), "candidate");
   assert.match(sealed.warnings?.join(" ") ?? "", /degradados/i);
 });

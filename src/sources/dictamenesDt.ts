@@ -92,8 +92,16 @@ export async function searchDictamenesDt(
         ? `dictamen OR ord ${numero}`
         : `${query} dictamen OR ord`,
       sites: [
-        { site: "dt.gob.cl", publisher: "Dirección del Trabajo" },
-        { site: "dirtrab.cl", publisher: "Dirección del Trabajo" },
+        {
+          site: "dt.gob.cl",
+          publisher: "Dirección del Trabajo",
+          allowedHosts: ["dt.gob.cl", "dirtrab.cl"],
+        },
+        {
+          site: "dirtrab.cl",
+          publisher: "Dirección del Trabajo",
+          allowedHosts: ["dt.gob.cl", "dirtrab.cl"],
+        },
       ],
       signal: opts.signal,
       extract: {

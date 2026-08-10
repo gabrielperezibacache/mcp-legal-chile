@@ -333,12 +333,12 @@ function enrich(hits: CitationResult[]): CitationResult[] {
 }
 
 function tcHitToCitation(hit: TcSearchHit, query?: string): CitationResult {
-  const anio = anioFromRol(hit.rol);
+  const anioRol = anioFromRol(hit.rol);
+  // Do not put ROL year in the formal citation: ingreso ≠ fecha de sentencia.
   const citation = formatChileanCitation({
     tribunal: "Tribunal Constitucional",
     tipo: "Sentencia",
     rol: hit.rol,
-    anio,
     url: hit.fichaUrl,
   }).citation;
 
@@ -392,7 +392,7 @@ function tcHitToCitation(hit: TcSearchHit, query?: string): CitationResult {
       competencia: hit.competencia,
       pdfUrl: hit.pdfUrl,
       provider: "tc_buscador",
-      anio,
+      anioRol,
       tipo: "Sentencia",
     },
   };

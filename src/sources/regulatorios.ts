@@ -54,7 +54,13 @@ async function searchRegulatorio(
       limit: Math.max(1, limit - 1),
       source: "dictamenes",
       searchQuery: `${query} circular OR oficio OR resolución`,
-      sites: [{ site: cfg.site, publisher: cfg.publisher }],
+      sites: [
+        {
+          site: cfg.site,
+          publisher: cfg.publisher,
+          allowedHosts: [cfg.site],
+        },
+      ],
       signal: opts.signal,
       extract: {
         label: cfg.label,

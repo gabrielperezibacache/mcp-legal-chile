@@ -6,9 +6,20 @@ import {
   uniqueByUrl,
   WEB_SEARCH_USER_AGENT,
 } from "../util.js";
+import {
+  CGR_HOSTS,
+  DIPRES_HOSTS,
+  isAllowedHost,
+  publisherForOfficialUrl,
+} from "./hostAllowlist.js";
 import { searchWeb, webHitsToCitations } from "./websearch.js";
 
+/** CGR numbers: classic N° or expediente-style E370813/2023. */
 function extractDictamenNumber(query: string): string | undefined {
+  const expediente = query.match(
+    /\b([Ee]\d{4,8}\s*[-/]\s*\d{2,4})\b/,
+  );
+  if (expediente?.[1]) return expediente[1].replace(/\s+/g, "");
   const match = query.match(
     /(?:dictamen(?:es)?|n[ºo°.]?)\s*([0-9]{1,6}(?:\s*[-/]\s*[0-9]{2,4})?)/i,
   );
@@ -24,6 +35,12 @@ export async function tryExtractCgrBody(
   url: string,
   signal?: AbortSignal,
 ): Promise<{ excerpt?: string; title?: string; warning?: string }> {
+  if (!isAllowedHost(url, CGR_HOSTS)) {
+    return {
+      warning:
+        "URL fuera de contraloria.cl: no se extrae ni se marca verified (evitar atribución falsa).",
+    };
+  }
   if (/\.pdf(\?|#|$)/i.test(url)) {
     return {
       warning:
@@ -73,6 +90,17 @@ function withOptionalExcerpt(
   excerpt?: string,
 ): CitationResult {
   if (!excerpt) return hit;
+  if (!isAllowedHost(hit.url, CGR_HOSTS)) {
+    return {
+      ...hit,
+      evidence: "link_only",
+      metadata: {
+        ...(hit.metadata ?? {}),
+        integrity: "candidate",
+        rejectedVerifiedReason: "non_cgr_host",
+      },
+    };
+  }
   return {
     ...hit,
     evidence: "full_text",
@@ -85,26 +113,53 @@ function withOptionalExcerpt(
   };
 }
 
+/** Drop SERP noise; never keep off-domain hits in the CGR/DIPRES buckets. */
+export function filterOfficialDictamenHits(
+  hits: CitationResult[],
+  allowedDomains: readonly string[],
+): { kept: CitationResult[]; dropped: number } {
+  const kept: CitationResult[] = [];
+  let dropped = 0;
+  for (const hit of hits) {
+    if (!isAllowedHost(hit.url, allowedDomains)) {
+      dropped += 1;
+      continue;
+    }
+    const publisher = publisherForOfficialUrl(hit.url, [
+      { domains: CGR_HOSTS, publisher: "Contraloría General de la República" },
+      { domains: DIPRES_HOSTS, publisher: "Dirección de Presupuestos" },
+    ]);
+    kept.push({
+      ...hit,
+      publisher: publisher ?? hit.publisher,
+      evidence: "link_only",
+      metadata: {
+        ...(hit.metadata ?? {}),
+        integrity: "candidate",
+      },
+    });
+  }
+  return { kept, dropped };
+}
+
 export async function searchDictamenes(
   query: string,
   limit = 8,
   opts: { signal?: AbortSignal } = {},
 ): Promise<SearchResponse> {
   const warnings: string[] = [
-    "Sin cuerpo HTML: evidencia=link_only. Con extracto de ficha pública: integrity=verified (confirma íntegro en CGR).",
+    "Solo se aceptan URLs en contraloria.cl / dipres.gob.cl. Sin cuerpo HTML oficial: evidence=link_only. verified solo con extracto de ficha CGR.",
   ];
   const results: CitationResult[] = [];
   const dictamenNumber = extractDictamenNumber(query);
 
   if (dictamenNumber) {
     const cgrSearch = cgrSearchUrl(dictamenNumber);
-    const ddgDeep = `https://duckduckgo.com/?q=${encodeURIComponent(`dictamen ${dictamenNumber} site:contraloria.cl`)}`;
     const portalHit: CitationResult = {
       source: "dictamenes",
       title: `[Candidato · verificar] Dictamen N° ${dictamenNumber} — búsqueda portal CGR`,
       citation: `Dictamen N° ${dictamenNumber} (enlace de búsqueda; texto no recuperado)`,
       url: cgrSearch,
-      secondaryUrl: ddgDeep,
       publisher: "Contraloría General de la República",
       id: dictamenNumber,
       evidence: "link_only",
@@ -114,7 +169,6 @@ export async function searchDictamenes(
         integrity: "candidate",
         portalGenerico:
           "https://www.contraloria.cl/web/cgr/dictamenes-y-pronunciamientos-juridicos",
-        busquedaSugerida: ddgDeep,
       },
     };
     const extracted = await tryExtractCgrBody(cgrSearch, opts.signal);
@@ -140,14 +194,16 @@ export async function searchDictamenes(
     {
       site: "contraloria.cl",
       publisher: "Contraloría General de la República",
+      hosts: CGR_HOSTS,
     },
     {
       site: "dipres.gob.cl",
       publisher: "Dirección de Presupuestos",
+      hosts: DIPRES_HOSTS,
     },
   ] as const;
 
-  for (const { site, publisher } of sites) {
+  for (const { site, publisher, hosts } of sites) {
     try {
       const hits = await searchWeb(
         dictamenNumber ? `dictamen ${dictamenNumber}` : `${query} dictamen`,
@@ -157,25 +213,38 @@ export async function searchDictamenes(
           signal: opts.signal,
         },
       );
+      const raw = webHitsToCitations(hits, "dictamenes", publisher);
+      const { kept, dropped } = filterOfficialDictamenHits(raw, hosts);
+      if (dropped > 0) {
+        warnings.push(
+          `Se descartaron ${dropped} resultado(s) fuera de ${hosts.join("/") } (SERP contaminada).`,
+        );
+      }
       const citations = await Promise.all(
-        webHitsToCitations(hits, "dictamenes", publisher).map(async (hit) => {
+        kept.map(async (hit) => {
           const ids = parseCaseIdentifiers(hit.title, hit.summary ?? "");
           let enriched: CitationResult = {
             ...hit,
-            evidence: "link_only" as const,
+            evidence: "link_only",
             id: ids.dictamen ?? hit.id,
             citation: ids.dictamen
               ? `Dictamen N° ${ids.dictamen}`
               : hit.citation,
+            metadata: {
+              ...(hit.metadata ?? {}),
+              integrity: "candidate",
+            },
           };
           if (
-            site === "contraloria.cl" &&
+            isAllowedHost(hit.url, CGR_HOSTS) &&
             hit.url &&
             !/\.pdf(\?|#|$)/i.test(hit.url)
           ) {
             const body = await tryExtractCgrBody(hit.url, opts.signal);
             if (body.warning) warnings.push(body.warning);
-            if (body.excerpt) enriched = withOptionalExcerpt(enriched, body.excerpt);
+            if (body.excerpt) {
+              enriched = withOptionalExcerpt(enriched, body.excerpt);
+            }
           }
           return enriched;
         }),
@@ -191,7 +260,7 @@ export async function searchDictamenes(
   const deduped = uniqueByUrl(results).slice(0, limit);
   if (deduped.length === 0) {
     warnings.push(
-      "No se indexaron dictámenes automáticamente. Usa el buscador oficial de la Contraloría.",
+      "No se indexaron dictámenes oficiales. Usa el buscador de la Contraloría; no cites resultados web genéricos.",
     );
   }
 

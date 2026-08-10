@@ -1,5 +1,13 @@
 import type { CitationResult, EvidenceKind, SearchResponse } from "./types.js";
 import { metrics } from "./metrics.js";
+import {
+  CGR_HOSTS,
+  CMF_HOSTS,
+  DIPRES_HOSTS,
+  DT_HOSTS,
+  isAllowedHost,
+  SERNAC_HOSTS,
+} from "./sources/hostAllowlist.js";
 
 /** Rules injected into every search/pack response for the consuming LLM. */
 export const ANTI_HALLUCINATION_RULES = [
@@ -9,6 +17,7 @@ export const ANTI_HALLUCINATION_RULES = [
   "Si no hay resultados: dilo. No completes con memoria ni con fuentes no listadas.",
   "Doctrina (metadata) no es vinculante y no sustituye el texto oficial de LeyChile.",
   "Todo extracto textual debe provenir de full_text verificado (LeyChile / TC / texto pegado).",
+  "Nunca trates un resultado web genérico (diccionarios, foros, mods) como dictamen CGR/DT u otra fuente oficial.",
 ] as const;
 
 export type IntegrityKind = "verified" | "candidate" | "portal_stub";
@@ -33,8 +42,8 @@ export function integrityOf(result: CitationResult): IntegrityKind {
 }
 
 /**
- * Enforce honesty: verified requires recovered text.
- * Returns demoted result + whether demotion happened.
+ * Enforce honesty: verified requires recovered text AND official host for
+ * agency/dictamen sources (SERP contamination safety net).
  */
 export function enforceVerifiedHasText(result: CitationResult): {
   result: CitationResult;
@@ -42,6 +51,36 @@ export function enforceVerifiedHasText(result: CitationResult): {
 } {
   const evidence = result.evidence ?? "link_only";
   const integrity = integrityOf({ ...result, evidence });
+  const agencyHosts =
+    result.source === "dictamenes"
+      ? [...CGR_HOSTS, ...DIPRES_HOSTS, ...DT_HOSTS, ...SERNAC_HOSTS, ...CMF_HOSTS]
+      : null;
+
+  if (
+    integrity === "verified" &&
+    agencyHosts &&
+    result.url &&
+    !isAllowedHost(result.url, agencyHosts)
+  ) {
+    return {
+      demoted: true,
+      result: withIntegrity(
+        {
+          ...result,
+          evidence: "link_only",
+          publisher: undefined,
+          metadata: {
+            ...(result.metadata ?? {}),
+            demotedFromVerified: true,
+            demotionReason: "verified_non_official_host",
+          },
+        },
+        "candidate",
+        "link_only",
+      ),
+    };
+  }
+
   if (integrity === "verified" && !hasRecoveredText(result)) {
     return {
       demoted: true,

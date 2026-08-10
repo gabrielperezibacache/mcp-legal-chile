@@ -6,6 +6,20 @@ Versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.23.0] — 2026-08-10
+
+### Fixed
+- **Procedencia CGR/DT/SERNAC/CMF:** allowlist de dominios oficiales; SERP contaminada (RAE, SpanishDict, Nexus Mods, etc.) se descarta; nunca `publisher=Contraloría` ni `verified` fuera de host oficial
+- **Considerandos TC:** rechaza números espurios (p.ej. 787 de OCR/página); headers arábigos solo con marca ordinal `º/°`
+- **LeyChile:** mensajes explícitos para HTTP 401/403/404 (CloudFront/WAF) en vez de timeout genérico
+- **Citas:** `Código Penal` / `Código Civil` ya no salen como `Código N° PENAL`
+- **Doctrina:** decode de entidades HTML en títulos/abstracts
+- **TC search:** no usa año del ROL como año de sentencia en la cita
+
+### Added
+- `src/sources/hostAllowlist.ts` + tests `provenanceIntegrity.test.mjs`
+- Regla anti-alucinación: no tratar web genérica como dictamen oficial
+
 ## [1.22.1] — 2026-08-10
 
 ### Fixed

@@ -27,6 +27,7 @@ import {
   LATAM_REFERENCE_JOURNALS,
   type LatamCountry,
 } from "./journalCatalog.js";
+import { decodeHtmlEntities } from "../util.js";
 import {
   obtenerArticuloPorDoiSciELO,
   obtenerArticuloSciELO,
@@ -178,7 +179,10 @@ function fromCrossref(item: CrossrefItem): DoctrineRecord | null {
     doi,
     url: item.URL ?? (doi ? `https://doi.org/${doi}` : ""),
     abstract: item.abstract
-      ? item.abstract.replace(/<[^>]+>/g, " ").slice(0, 900)
+      ? decodeHtmlEntities(item.abstract.replace(/<[^>]+>/g, " "))
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 900)
       : undefined,
     provider: "crossref",
   });
@@ -187,13 +191,13 @@ function fromCrossref(item: CrossrefItem): DoctrineRecord | null {
 function toCitationResult(d: DoctrineRecord): CitationResult {
   return {
     source: "doctrina",
-    title: d.title,
-    citation: d.citationChile,
-    summary: d.abstract,
+    title: decodeHtmlEntities(d.title),
+    citation: decodeHtmlEntities(d.citationChile),
+    summary: d.abstract ? decodeHtmlEntities(d.abstract) : undefined,
     date: d.year,
     url: d.url,
     secondaryUrl: d.pdfUrl,
-    publisher: d.journal ?? "Doctrina académica",
+    publisher: d.journal ? decodeHtmlEntities(d.journal) : "Doctrina académica",
     id: d.doi ?? d.scieloPid ?? d.openAlexId,
     evidence: "metadata",
     metadata: {
