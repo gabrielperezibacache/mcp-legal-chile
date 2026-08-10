@@ -86,6 +86,33 @@ test("rankJurisprudenciaResults ordena por relevancia de consulta", () => {
   );
 });
 
+test("scoreJurisprudenciaHit penaliza TC off-topic con baja cobertura", () => {
+  const query = "prisión preventiva peligro de fuga";
+  const offTopicTc = {
+    source: "jurisprudencia",
+    title: "TC rol 14138 — Ley de Tránsito",
+    citation: "Tribunal Constitucional, rol 14138",
+    summary: "constitucionalidad del artículo 196 ter y penas sustitutivas",
+    url: "https://buscador.tcchile.cl/#/ficha/14138",
+    tribunal: "Tribunal Constitucional",
+    rol: "14138-2023",
+    evidence: "full_text",
+    metadata: { provider: "tc_buscador" },
+  };
+  const onTopic = {
+    source: "jurisprudencia",
+    title: "Prisión preventiva y peligro de fuga — Corte de Apelaciones",
+    citation: "CA, prisión preventiva",
+    summary: "se confirma la prisión preventiva por peligro de fuga del imputado",
+    url: "https://oficinajudicialvirtual.pjud.cl/indexN.php",
+    evidence: "link_only",
+  };
+  assert.ok(
+    scoreJurisprudenciaHit(onTopic, query) >
+      scoreJurisprudenciaHit(offTopicTc, query),
+  );
+});
+
 test("scoreJurisprudenciaHit no da bonus de tribunal por substring parcial", () => {
   const hit = {
     source: "jurisprudencia",

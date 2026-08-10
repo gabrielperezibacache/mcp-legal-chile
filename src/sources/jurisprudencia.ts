@@ -210,18 +210,39 @@ export function scoreJurisprudenciaHit(
   const hay = foldTribunalText(
     `${hit.title} ${hit.summary ?? ""} ${hit.citation} ${hit.rol ?? ""}`,
   );
+  let matched = 0;
   for (const token of tokens) {
-    if (hay.includes(token)) score += token.length > 4 ? 12 : 7;
+    if (hay.includes(token)) {
+      matched += 1;
+      score += token.length > 4 ? 12 : 7;
+    }
+  }
+  const coverage = tokens.length ? matched / tokens.length : 1;
+
+  // Adjacent bigrams (e.g. "prision preventiva", "peligro fuga")
+  for (let i = 0; i + 1 < tokens.length; i++) {
+    const a = tokens[i]!;
+    const b = tokens[i + 1]!;
+    if (a.length > 2 && b.length > 2 && hay.includes(`${a} ${b}`)) {
+      score += 14;
+    }
   }
 
   if (hit.evidence === "full_text") score += 35;
   else if (hit.evidence === "metadata") score += 25;
   else score += 5;
 
-  if (hit.metadata?.provider === "tc_buscador") score += 20;
+  // TC is a strong source, but not when the hit barely matches the query.
+  if (hit.metadata?.provider === "tc_buscador") {
+    score += coverage >= 0.5 ? 12 : 4;
+  }
   if (isOfficialHost(hit.url)) score += 15;
   if (hit.rol) score += 10;
   if (hit.secondaryUrl) score += 5;
+
+  if (tokens.length >= 3 && coverage < 0.5) score -= 35;
+  else if (tokens.length >= 2 && coverage < 0.5) score -= 22;
+  else if (tokens.length >= 4 && matched < 2) score -= 40;
 
   if (opts.tribunal) {
     const wanted = foldTribunalText(opts.tribunal);

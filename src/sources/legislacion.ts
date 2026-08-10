@@ -154,14 +154,55 @@ export function extractLawNumber(query: string): string | undefined {
   return plain[1];
 }
 
+function foldLegisText(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+}
+
 function searchTerms(query: string): string[] {
   return query
     .trim()
     .toLowerCase()
     .split(/\s+/)
     .map((t) => t.replace(/[^\p{L}\p{N}.-]/gu, ""))
-    .filter((t) => t.length > 2 && !STOPWORDS.has(t))
+    .filter((t) => t.length > 2 && !STOPWORDS.has(t) && !STOPWORDS.has(foldLegisText(t)))
     .slice(0, 4);
+}
+
+/** Token coverage of query terms in a legislación title (0..1). */
+export function scoreLegislacionHit(
+  hit: CitationResult,
+  terms: string[],
+): number {
+  if (!terms.length) return 0;
+  const hay = foldLegisText(`${hit.title} ${hit.citation} ${hit.summary ?? ""}`);
+  let matched = 0;
+  for (const t of terms) {
+    if (hay.includes(foldLegisText(t))) matched += 1;
+  }
+  let score = matched / terms.length;
+  // Prefer exact-ish multi-word presence
+  if (terms.length >= 2) {
+    const bigram = `${foldLegisText(terms[0]!)} ${foldLegisText(terms[1]!)}`;
+    if (hay.includes(bigram)) score += 0.25;
+  }
+  return score;
+}
+
+export function rankLegislacionResults(
+  results: CitationResult[],
+  terms: string[],
+): CitationResult[] {
+  if (!terms.length) return results;
+  const minCoverage =
+    terms.length >= 3 ? 2 / terms.length : terms.length >= 2 ? 0.5 : 0;
+  const scored = results
+    .map((hit) => ({ hit, score: scoreLegislacionHit(hit, terms) }))
+    .filter(({ score }) => score + 1e-9 >= minCoverage)
+    .sort((a, b) => b.score - a.score);
+  return scored.map((s) => s.hit);
 }
 
 function bindingsToResults(
@@ -389,10 +430,16 @@ export async function searchLegislacion(
         opts.signal,
         "none",
       );
-      results = bindingsToResults(data.results.bindings, limit);
+      results = bindingsToResults(data.results.bindings, Math.max(limit * 2, 12));
+      const before = results.length;
+      results = rankLegislacionResults(results, terms).slice(0, limit);
       if (results.length) {
         warnings.push(
-          "Resultados SPARQL con coincidencia parcial (OR) en el título; verifica relevancia.",
+          "Resultados SPARQL con coincidencia parcial (OR) en el título; filtrados por cobertura de términos — verifica relevancia.",
+        );
+      } else if (before > 0) {
+        warnings.push(
+          `SPARQL OR devolvió ${before} hit(s) pero ninguno cubría suficientes términos de la consulta.`,
         );
       }
     } catch (error) {

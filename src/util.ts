@@ -309,6 +309,38 @@ export function decodeHtmlEntities(text: string): string {
     );
 }
 
+/** Fix common UTF-8-as-Latin1 mojibake in scraped titles/abstracts. */
+export function fixMojibake(text: string): string {
+  if (!/[ÃÂâ]/.test(text)) return text;
+  return text
+    .replace(/Ã¡/g, "á")
+    .replace(/Ã©/g, "é")
+    .replace(/Ã­/g, "í")
+    .replace(/Ã³/g, "ó")
+    .replace(/Ãº/g, "ú")
+    .replace(/Ã±/g, "ñ")
+    .replace(/Ã/g, "Á")
+    .replace(/Ã‰/g, "É")
+    .replace(/Ã/g, "Í")
+    .replace(/Ã“/g, "Ó")
+    .replace(/Ãš/g, "Ú")
+    .replace(/Ã‘/g, "Ñ")
+    .replace(/Â¿/g, "¿")
+    .replace(/Â¡/g, "¡")
+    .replace(/â€œ/g, "“")
+    .replace(/â€/g, "”")
+    .replace(/â€˜/g, "‘")
+    .replace(/â€™/g, "’")
+    .replace(/â€”/g, "—")
+    .replace(/â€“/g, "–")
+    .replace(/â€¦/g, "…");
+}
+
+/** Normalize scraped text for display (entities + mojibake). */
+export function normalizeScrapedText(text: string): string {
+  return fixMojibake(decodeHtmlEntities(text)).replace(/\s+/g, " ").trim();
+}
+
 export function stripHtml(html: string): string {
   return decodeHtmlEntities(html.replace(/<[^>]+>/g, " "))
     .replace(/\s+/g, " ")

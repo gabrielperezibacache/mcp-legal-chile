@@ -264,8 +264,8 @@ export function registerLegislacionTools(server: McpServer): void {
         const norma = await timedSearch("obtener_texto_norma", (signal) =>
           parseNormaTexto(id_norma, {
             signal,
-            timeoutMs: 18_000,
-            retries: 2,
+            timeoutMs: 12_000,
+            retries: 1,
           }),
         );
         const body = normaToPlainText(norma, { maxChars: max_chars, modo });
@@ -322,8 +322,8 @@ export function registerLegislacionTools(server: McpServer): void {
         const norma = await timedSearch("obtener_articulo", (signal) =>
           parseNormaTexto(id_norma, {
             signal,
-            timeoutMs: 18_000,
-            retries: 2,
+            timeoutMs: 12_000,
+            retries: 1,
           }),
         );
         const art = requireArticulo(norma, articulo);
@@ -388,8 +388,8 @@ export function registerLegislacionTools(server: McpServer): void {
         const norma = await timedSearch("obtener_inciso", (signal) =>
           parseNormaTexto(id_norma, {
             signal,
-            timeoutMs: 18_000,
-            retries: 2,
+            timeoutMs: 12_000,
+            retries: 1,
           }),
         );
         const art = requireArticulo(norma, articulo);

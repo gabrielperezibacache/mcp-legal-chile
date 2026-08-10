@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { decodeHtmlEntities, stripHtml } from "../dist/util.js";
+import {
+  decodeHtmlEntities,
+  fixMojibake,
+  normalizeScrapedText,
+  stripHtml,
+} from "../dist/util.js";
 
 test("decodeHtmlEntities decodifica vocales acentuadas y ñ", () => {
   assert.equal(
@@ -31,5 +36,14 @@ test("stripHtml quita etiquetas y decodifica entidades combinadas", () => {
       "<b>Corte Suprema</b> acogi&oacute; el recurso &amp; confirm&oacute; la sentencia",
     ),
     "Corte Suprema acogió el recurso & confirmó la sentencia",
+  );
+});
+
+test("fixMojibake y normalizeScrapedText reparan UTF-8 mal leído", () => {
+  assert.equal(fixMojibake("prisiÃ³n preventiva"), "prisión preventiva");
+  assert.equal(fixMojibake("aÃ±o"), "año");
+  assert.equal(
+    normalizeScrapedText("hipot&#233;ticos &#8220;casos&#8221;"),
+    "hipotéticos “casos”",
   );
 });
