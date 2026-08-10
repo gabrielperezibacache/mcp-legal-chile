@@ -6,6 +6,17 @@ Versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.22.1] — 2026-08-10
+
+### Fixed
+- `resolver_norma_frecuente` acepta `alias` además de `consulta`; markdown con integrity + siguiente paso
+- `siguiente_paso`: `estado` opcional e inferencia desde consulta libre del abogado
+- Soft-degrade de red/timeout LeyChile (sin `isError`) para no tumbar clientes MCP
+- `asesorar` usa pack `perfil=fast` para respuesta inicial más ágil
+
+### Added
+- Script `scripts/lawyer-probe.mjs` — batería de flujos abogado (laboral, CPR, civil, DT, TC, workflow)
+
 ## [1.22.0] — 2026-08-10
 
 ### Added

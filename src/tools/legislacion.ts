@@ -31,6 +31,7 @@ import {
   formatoSchema,
   legalExtractionFailure,
   limitSchema,
+  needInput,
   READ_ONLY_ANNOTATIONS,
   okSearch,
   okText,
@@ -60,15 +61,30 @@ export function registerLegislacionTools(server: McpServer): void {
     {
       title: "Resolver norma frecuente (catálogo local)",
       description:
-        "Resuelve aliases locales (CT, CPR, CPC, 19.880, etc.) a idNorma + URL LeyChile sin llamar a BCN. Luego usa obtener_articulo / citar_texto_legal. integrity candidate hasta obtener XML.",
+        "Resuelve aliases locales (CT, CPR, CPC, 19.880, etc.) a idNorma + URL LeyChile sin llamar a BCN. Usa `consulta` o `alias` (sinónimos). Luego obtener_articulo / citar_texto_legal. integrity candidate hasta obtener XML.",
       inputSchema: {
-        consulta: z.string().min(2),
+        consulta: z
+          .string()
+          .min(2)
+          .optional()
+          .describe("Alias o nombre de norma (ej. código del trabajo, CPR)"),
+        alias: z
+          .string()
+          .min(2)
+          .optional()
+          .describe("Sinónimo de consulta (aceptado por DX de agentes)"),
       },
       annotations: READ_ONLY_ANNOTATIONS,
     },
-    async ({ consulta }) => {
+    async ({ consulta, alias }) => {
       try {
-        return okText(resolverNormaFrecuenteMapa(consulta).markdown);
+        const q = (consulta ?? alias ?? "").trim();
+        if (q.length < 2) {
+          return needInput(
+            "Indica `consulta` o `alias` (ej. «código del trabajo», «CPR», «19.880»).",
+          );
+        }
+        return okText(resolverNormaFrecuenteMapa(q).markdown);
       } catch (error) {
         return fail(
           `Error resolver_norma_frecuente: ${error instanceof Error ? error.message : String(error)}`,

@@ -57,13 +57,29 @@ export function registerWorkflowTools(server: McpServer): void {
     {
       title: "Sugerir siguiente tool del flujo",
       description:
-        "Dado el estado actual del trabajo (pack_listo, causa_obtenida, escrito_estructurado, etc.), indica la siguiente tool MCP a llamar. No consulta fuentes externas.",
+        "Indica la siguiente tool MCP a llamar. `estado` es opcional: si falta, se infiere desde `consulta` (p.ej. «ya tengo el art. 161 CT, qué sigue»). Estados: inicio, pack_listo, texto_legal_listo, fallo_pegado, etc. No consulta fuentes externas.",
       inputSchema: {
-        estado: z.enum(ESTADOS_FLUJO),
-        consulta: z.string().optional(),
+        estado: z
+          .enum(ESTADOS_FLUJO)
+          .optional()
+          .describe("Estado actual del flujo; si se omite se infiere"),
+        consulta: z
+          .string()
+          .optional()
+          .describe("Consulta libre del abogado/agente para contextualizar"),
       },
     },
-    async ({ estado, consulta }) => okText(siguientePaso({ estado, consulta })),
+    async ({ estado, consulta }) => {
+      if (!estado && !(consulta && consulta.trim())) {
+        return okText(
+          siguientePaso({
+            estado: "inicio",
+            consulta: "sin contexto — usa asesorar o catalogo_flujos",
+          }),
+        );
+      }
+      return okText(siguientePaso({ estado, consulta }));
+    },
   );
 
   server.registerTool(
@@ -193,7 +209,7 @@ export function registerWorkflowTools(server: McpServer): void {
         }
 
         const pack = await timed("asesorar.investigar_tema", () =>
-          investigarTema(consulta, limite_por_fuente),
+          investigarTema(consulta, limite_por_fuente, { perfil: "fast" }),
         );
         return okText(
           [

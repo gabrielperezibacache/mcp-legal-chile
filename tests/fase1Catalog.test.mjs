@@ -48,6 +48,8 @@ test("listar_normas_frecuentes y resolver_norma_frecuente", () => {
   const resolved = resolverNormaFrecuente("Código del Trabajo");
   assert.equal(resolved.found, true);
   assert.equal(resolved.norma?.idNorma, "207436");
+  assert.match(resolved.markdown, /candidate/);
+  assert.match(resolved.markdown, /obtener_articulo/);
 
   const miss = resolverNormaFrecuente("xyz-norma-inventada-99");
   assert.equal(miss.found, false);

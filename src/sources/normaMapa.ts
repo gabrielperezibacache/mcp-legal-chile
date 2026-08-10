@@ -77,8 +77,14 @@ export function resolverNormaFrecuente(alias: string): {
       `- **Áreas:** ${hit.areas.join(", ")}`,
       `- **Aliases:** ${hit.aliases.slice(0, 12).join("; ")}`,
       `- **URL:** ${url}`,
+      `- **Integridad de este atajo:** \`candidate\` (catálogo local; el texto se verifica con LeyChile XML)`,
       "",
-      `→ \`obtener_articulo\` / \`citar_texto_legal\` / \`mapa_norma\` con id_norma=${hit.idNorma}`,
+      "## Siguiente paso",
+      `- \`obtener_articulo\` / \`citar_texto_legal\` con id_norma=\`${hit.idNorma}\``,
+      `- \`mapa_norma\` para índice/derogados`,
+      `- O \`lista_prueba_normativa\` sobre el mismo tema`,
+      "",
+      "_Este resultado no descarga el XML; no cites artículos hasta obtenerlos._",
     ].join("\n"),
   };
 }

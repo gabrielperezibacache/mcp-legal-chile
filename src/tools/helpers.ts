@@ -154,12 +154,13 @@ export function formatLegalExtractionError(
 }
 
 /**
- * Soft degradations (429 / circuit open): useful markdown without isError so
- * MCP clients (e.g. Hermes) do not trip a global "unreachable" cooldown.
+ * Soft degradations (429 / circuit open / transient network): useful markdown
+ * without isError so MCP clients do not trip a global "unreachable" cooldown.
  */
 export function legalExtractionFailure(error: unknown, idNorma: string) {
   const code = idNorma.replace(/\D/g, "");
   const official = `https://www.bcn.cl/leychile/navegar?idNorma=${code}`;
+  const xml = `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
   if (error instanceof LeyChileRateLimitError) {
     const sec = Math.max(1, Math.ceil(error.retryAfterMs / 1000));
     return okText(
@@ -167,7 +168,7 @@ export function legalExtractionFailure(error: unknown, idNorma: string) {
         "LeyChile está limitando temporalmente las solicitudes (HTTP 429).",
         `Reintenta en ~${sec}s. Mientras tanto usa la URL oficial (no inventes el texto).`,
         `Fuente oficial: ${official}`,
-        `XML: https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
+        `XML: ${xml}`,
         `Detalle: ${error.message}`,
       ].join("\n"),
     );
@@ -179,8 +180,25 @@ export function legalExtractionFailure(error: unknown, idNorma: string) {
         `El circuito de ${error.host} está temporalmente abierto tras fallos upstream.`,
         `Reintenta en ~${sec}s. Usa la URL oficial mientras tanto (no inventes el texto).`,
         `Fuente oficial: ${official}`,
-        `XML: https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
+        `XML: ${xml}`,
         `Detalle: ${error.message}`,
+      ].join("\n"),
+    );
+  }
+  const msg = error instanceof Error ? error.message : String(error);
+  if (
+    /fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|socket|network|aborted|Timeout|HTTP 5\d\d|UND_ERR/i.test(
+      msg,
+    )
+  ) {
+    return okText(
+      [
+        "No se pudo contactar LeyChile/BCN en este momento (error de red o timeout).",
+        "No inventes el texto. Abre la URL oficial o reintenta en unos segundos.",
+        `Fuente oficial: ${official}`,
+        `XML: ${xml}`,
+        `Detalle: ${msg}`,
+        "Alternativa offline: `DEMO_MODE=1` solo sirve fixtures hot de demo; en producción usa la URL.",
       ].join("\n"),
     );
   }

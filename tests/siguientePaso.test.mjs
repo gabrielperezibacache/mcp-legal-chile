@@ -15,6 +15,19 @@ test("siguientePaso pack_listo apunta a prueba normativa", () => {
   assert.match(md, /despido/);
 });
 
+test("siguientePaso infiere texto_legal_listo desde consulta libre", async () => {
+  const { inferEstadoFlujo } = await import("../dist/siguientePaso.js");
+  assert.equal(
+    inferEstadoFlujo("Ya tengo el art. 161 CT, qué sigue para demanda laboral"),
+    "texto_legal_listo",
+  );
+  const md = siguientePaso({
+    consulta: "Ya tengo el art. 161 CT, qué sigue para demanda",
+  });
+  assert.match(md, /inferido|texto_legal_listo/);
+  assert.match(md, /buscar_jurisprudencia|pegar_fallo|IRAC/);
+});
+
 test("siguientePaso causa_obtenida apunta a borrador", () => {
   const md = siguientePaso({ estado: "causa_obtenida" });
   assert.match(md, /borrador_mensaje_cliente|aviso_desde_causa/);

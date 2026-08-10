@@ -18,18 +18,85 @@ export const ESTADOS_FLUJO = [
 
 export type EstadoFlujo = (typeof ESTADOS_FLUJO)[number];
 
+/** Infer a sensible flow state from free-text (agents often omit `estado`). */
+export function inferEstadoFlujo(consulta?: string): EstadoFlujo {
+  const q = (consulta ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+  if (!q.trim()) return "inicio";
+  if (
+    /\b(mensaje al cliente|borrador listo|ya envie|ya envié)\b/.test(q)
+  ) {
+    return "mensaje_cliente_listo";
+  }
+  if (/\b(anexo de citas|anexo armado|anexo listo)\b/.test(q)) {
+    return "anexo_armado";
+  }
+  if (
+    /\b(escrito estructurado|plantilla lista|demanda armada|recurso armado)\b/.test(
+      q,
+    )
+  ) {
+    return "escrito_estructurado";
+  }
+  if (/\b(actuaciones comparadas|diff de movimientos)\b/.test(q)) {
+    return "actuaciones_comparadas";
+  }
+  if (
+    /\b(causa obtenida|ya tengo la causa|ojv|rit\b|obtener_causa)\b/.test(q)
+  ) {
+    return "causa_obtenida";
+  }
+  if (/\b(dictamen pegado|dictamen cgr pegado)\b/.test(q)) {
+    return "dictamen_pegado";
+  }
+  if (
+    /\b(fallo pegado|considerando|importar_fallo|pegar_fallo)\b/.test(q)
+  ) {
+    return "fallo_pegado";
+  }
+  if (
+    /\b(ya tengo el art|texto legal|articulo listo|cita legal lista|obtener_articulo)\b/.test(
+      q,
+    )
+  ) {
+    return "texto_legal_listo";
+  }
+  if (
+    /\b(prueba normativa|lista_prueba|articulos a obtener)\b/.test(q)
+  ) {
+    return "prueba_normativa_lista";
+  }
+  if (
+    /\b(pack listo|ya investig|investigar_tema|pack de investigacion)\b/.test(q)
+  ) {
+    return "pack_listo";
+  }
+  // Lawyer follow-up after citing CT art often asks "qué sigue para demanda"
+  if (/\b(demanda|tutela|que sigue|qué sigue|escrito)\b/.test(q)) {
+    return "texto_legal_listo";
+  }
+  return "inicio";
+}
+
 export function siguientePaso(opts: {
-  estado: EstadoFlujo;
+  estado?: EstadoFlujo;
   consulta?: string;
 }): string {
+  const inferred = !opts.estado;
+  const estado = opts.estado ?? inferEstadoFlujo(opts.consulta);
   const q = opts.consulta?.trim();
   const lines = [
-    `# Siguiente paso — estado \`${opts.estado}\``,
+    `# Siguiente paso — estado \`${estado}\``,
+    inferred
+      ? `_Estado inferido desde la consulta (pasa \`estado\` explícito si quieres forzar el flujo)._`
+      : undefined,
     q ? `**Consulta:** ${q}` : undefined,
     "",
   ].filter((x): x is string => Boolean(x));
 
-  switch (opts.estado) {
+  switch (estado) {
     case "inicio":
       lines.push(
         "1. `catalogo_flujos` (opcional) o `asesorar` / `preparar_entregable` con `modo=auto`.",
