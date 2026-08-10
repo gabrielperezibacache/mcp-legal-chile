@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   citarJurisprudencia,
+  importarFallo,
   obtenerFalloTc,
   resolverRol,
   resolveRolToMarkdown,
@@ -16,6 +17,7 @@ import {
   limitSchema,
   okSearch,
   okText,
+  READ_ONLY_ANNOTATIONS,
   timedSearch,
 } from "./helpers.js";
 
@@ -340,6 +342,55 @@ export function registerJurisprudenciaTools(server: McpServer): void {
       } catch (error) {
         return fail(
           `Error pegar_fallo_pjud: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "importar_fallo",
+    {
+      title: "Importar fallo y cachearlo por ROL",
+      description:
+        "Importa texto pegado o una URL HTML pública, detecta considerandos y cachea el fallo para citar_jurisprudencia/verificar_cita. No extrae PDFs.",
+      inputSchema: {
+        rol: z.string().min(3),
+        texto: z.string().min(80).optional(),
+        url: z.string().url().optional(),
+        tribunal: z.string().optional(),
+        tipo_resolucion: z.string().optional(),
+        anio: z.string().optional(),
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({
+      rol,
+      texto,
+      url,
+      tribunal,
+      tipo_resolucion,
+      anio,
+      formato,
+    }) => {
+      try {
+        const result = await timedSearch("importar_fallo", (signal) =>
+          importarFallo({
+            rol,
+            texto,
+            url,
+            tribunal,
+            tipoResolucion: tipo_resolucion,
+            anio,
+            signal,
+          }),
+        );
+        return okText(
+          formato === "json" ? formatResultsJson(result) : result.markdown,
+        );
+      } catch (error) {
+        return fail(
+          `Error importar_fallo: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     },

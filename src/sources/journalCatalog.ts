@@ -189,6 +189,21 @@ export const LATAM_REFERENCE_JOURNALS: LegalJournal[] = [
     publisher: "PUCP",
     homepage: "http://revistas.pucp.edu.pe/index.php/derechoysoci",
   },
+  {
+    name: "Ius et Veritas",
+    country: "PE",
+    issns: ["1995-2929", "2411-8710"],
+    collection: "per",
+    publisher: "PUCP",
+    homepage: "https://revistas.pucp.edu.pe/index.php/iusetveritas",
+  },
+  {
+    name: "Revista de la Facultad de Derecho y Ciencias Políticas (UNMSM)",
+    country: "PE",
+    issns: ["3028-8800", "2617-2143"],
+    publisher: "Universidad Nacional Mayor de San Marcos",
+    homepage: "https://revistasinvestigacion.unmsm.edu.pe/index.php/derecho",
+  },
   // Brasil
   {
     name: "Revista Direito GV",
@@ -203,8 +218,25 @@ export const LATAM_REFERENCE_JOURNALS: LegalJournal[] = [
     name: "Revista Direito e Práxis",
     country: "BR",
     issns: ["2179-8966"],
+    collection: "scl",
     publisher: "UERJ",
     homepage: "https://www.scielo.br/j/rdp",
+  },
+  {
+    name: "Revista Brasileira de Direito",
+    country: "BR",
+    issns: ["2238-0604", "2238-5174"],
+    collection: "scl",
+    publisher: "IMED",
+    homepage: "https://seer.uscs.edu.br/index.php/revista_direito",
+  },
+  {
+    name: "Seqüência Estudos Jurídicos e Políticos",
+    country: "BR",
+    issns: ["0101-9562", "2177-7055"],
+    collection: "scl",
+    publisher: "UFSC",
+    homepage: "https://periodicos.ufsc.br/index.php/sequencia",
   },
   // Argentina
   {
@@ -225,6 +257,21 @@ export const LATAM_REFERENCE_JOURNALS: LegalJournal[] = [
     publisher: "Instituto de Investigaciones de Historia del Derecho",
     homepage:
       "https://www.scielo.org.ar/scielo.php?script=sci_serial&pid=1853-1784",
+  },
+  {
+    name: "Lecciones y Ensayos",
+    country: "AR",
+    issns: ["0024-0079", "1851-1880"],
+    collection: "arg",
+    publisher: "Universidad de Buenos Aires",
+    homepage: "http://www.derecho.uba.ar/publicaciones/lye",
+  },
+  {
+    name: "Revista Jurídica de la Universidad de Palermo",
+    country: "AR",
+    issns: ["0328-6398"],
+    publisher: "Universidad de Palermo",
+    homepage: "https://www.palermo.edu/derecho/revista_juridica",
   },
   // México
   {
@@ -261,6 +308,15 @@ export const LATAM_REFERENCE_JOURNALS: LegalJournal[] = [
     publisher: "UNAM",
     homepage: "https://revistas.juridicas.unam.mx/index.php/derecho",
   },
+  {
+    name: "Mexican Law Review",
+    country: "MX",
+    issns: ["1870-0578", "2448-5306"],
+    collection: "mex",
+    publisher: "UNAM",
+    homepage:
+      "https://revistas.juridicas.unam.mx/index.php/mexican-law-review",
+  },
   // Colombia
   {
     name: "Revista Derecho del Estado",
@@ -284,6 +340,22 @@ export const LATAM_REFERENCE_JOURNALS: LegalJournal[] = [
     issns: ["0121-5868", "1909-7778"],
     publisher: "Universidad de los Andes",
     homepage: "http://derechopublico.uniandes.edu.co",
+  },
+  {
+    name: "Vniversitas",
+    country: "CO",
+    issns: ["0041-9060", "2011-1711"],
+    collection: "col",
+    publisher: "Pontificia Universidad Javeriana",
+    homepage: "https://revistas.javeriana.edu.co/index.php/vnijuri",
+  },
+  {
+    name: "Revista de Derecho (Universidad del Norte)",
+    country: "CO",
+    issns: ["0121-8697", "2145-9355"],
+    collection: "col",
+    publisher: "Universidad del Norte",
+    homepage: "https://rcientificas.uninorte.edu.co/index.php/derecho",
   },
 ];
 

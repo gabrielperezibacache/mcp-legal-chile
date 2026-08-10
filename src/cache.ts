@@ -209,3 +209,9 @@ export const pjudCauseCache = new TtlCache(
   Number(process.env.PJUD_CAUSAS_CACHE_TTL_MS ?? 6 * 60 * 60_000),
   Number(process.env.PJUD_CAUSAS_CACHE_STALE_MS ?? 24 * 60 * 60_000),
 );
+
+/** Pasted/imported judgments keyed by ROL (session + optional Redis). */
+export const falloCache = new TtlCache(
+  Number(process.env.FALLO_CACHE_TTL_MS ?? 6 * 60 * 60_000),
+  Number(process.env.FALLO_CACHE_STALE_MS ?? 24 * 60 * 60_000),
+);

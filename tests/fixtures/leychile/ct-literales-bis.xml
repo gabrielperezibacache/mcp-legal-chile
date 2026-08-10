@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture sintético CT-like: literales + bis/ter. -->
+<Norma normaId="207436" fechaVersion="2024-01-01" derogado="no">
+  <Identificador fechaPublicacion="2002-01-16">
+    <TiposNumeros>
+      <TipoNumero>
+        <Tipo>Código</Tipo>
+        <Numero>1</Numero>
+      </TipoNumero>
+    </TiposNumeros>
+  </Identificador>
+  <Metadatos>
+    <TituloNorma>Código del Trabajo (fixture)</TituloNorma>
+  </Metadatos>
+  <EstructurasFuncionales>
+    <EstructuraFuncional tipoParte="Artículo" idParte="13">
+      <Texto>Artículo 13.- Queda prohibido:
+
+a) El trabajo de menores de quince años;
+
+b) El trabajo nocturno de menores de dieciocho años;
+
+c) Las labores peligrosas sin autorización.</Texto>
+      <Metadatos>
+        <NombreParte>13 </NombreParte>
+      </Metadatos>
+    </EstructuraFuncional>
+    <EstructuraFuncional tipoParte="Artículo" idParte="18b">
+      <Texto>Artículo 18 bis.- Norma especial bis sobre jornada.</Texto>
+      <Metadatos>
+        <NombreParte>18 BIS</NombreParte>
+      </Metadatos>
+    </EstructuraFuncional>
+    <EstructuraFuncional tipoParte="Artículo" idParte="18t">
+      <Texto>Artículo 18 ter.- Norma especial ter sobre descansos.</Texto>
+      <Metadatos>
+        <NombreParte>18 TER</NombreParte>
+      </Metadatos>
+    </EstructuraFuncional>
+    <EstructuraFuncional tipoParte="Artículo" idParte="18q">
+      <Texto>Artículo 18 quater.- Norma especial quater.</Texto>
+      <Metadatos>
+        <NombreParte>18 QUTER</NombreParte>
+      </Metadatos>
+    </EstructuraFuncional>
+  </EstructurasFuncionales>
+</Norma>

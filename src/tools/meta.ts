@@ -31,6 +31,15 @@ export function registerMetaTools(server: McpServer, version: string): void {
               "candidate / metadata publicación BCN (no determina vigencia sola)",
             normas_relacionadas:
               "candidate / metadata BCN (predicados estructurados: modifica/modificada por/refunde/rectificada por/regulada por/concuerda con)",
+            mapa_norma: "verified / índice XML LeyChile + señales derogado",
+            comparar_version_norma:
+              "verified si ambos XML históricos se recuperan; candidate con historia oficial si no",
+            buscar_reglamentos:
+              "candidate / metadata BCN-LeyChile; confirma decreto o reglamento oficial",
+            buscar_tratados:
+              "candidate / metadata BCN-LeyChile; confirma texto promulgatorio",
+            verificar_cita:
+              "verified solo si el texto o metadata oficial se recupera; candidate/not_found en los demás casos",
             obtener_texto_norma: "verified / full_text (LeyChile XML)",
             obtener_articulo: "verified / full_text (LeyChile XML)",
             obtener_inciso: "verified / full_text heurístico",
@@ -47,10 +56,21 @@ export function registerMetaTools(server: McpServer, version: string): void {
               "verified (full_text) si TC indexado o texto pegado; candidate (resumen ficha / evidence=metadata) si el ROL no está en el índice de texto TC; rechaza considerando inexistente",
             pegar_fallo_pjud:
               "verified sobre texto aportado (PJUD/CS/CA); requiere texto pegado; rechaza considerando inexistente",
+            importar_fallo:
+              "verified sobre texto HTML/texto aportado; cache local efímero por ROL; no extrae PDF",
             indice_considerandos:
               "verified sobre texto aportado — índice/ranking de considerandos sin citar aún",
             buscar_dictamenes: "candidate / link_only (verificar CGR)",
             resolver_dictamen: "candidate / link_only por número CGR",
+            buscar_dictamenes_dt:
+              "candidate/link_only; verified solo con extracto HTML DT usable",
+            resolver_dictamen_dt: "candidate / enlace y búsqueda por número DT",
+            buscar_circulares_sernac:
+              "candidate/link_only; verified solo con extracto HTML SERNAC usable",
+            buscar_circulares_cmf:
+              "candidate/link_only; verified solo con extracto HTML CMF usable",
+            buscar_regulatorio:
+              "candidate/link_only; portal_stub si solo devuelve el portal SERNAC/CMF",
             citar_dictamen_pegado:
               "verified sobre texto aportado (CGR); requiere texto pegado del portal",
             buscar_administrativo:

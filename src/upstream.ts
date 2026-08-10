@@ -9,6 +9,9 @@ export type HostKey =
   | "crossref"
   | "doaj"
   | "scielo"
+  | "dt"
+  | "sernac"
+  | "cmf"
   | "contraloria"
   | "pjud"
   | "pjudCauses"
@@ -33,6 +36,9 @@ const circuits: Record<HostKey, CircuitState> = {
   crossref: makeCircuit(),
   doaj: makeCircuit(),
   scielo: makeCircuit(),
+  dt: makeCircuit(),
+  sernac: makeCircuit(),
+  cmf: makeCircuit(),
   contraloria: makeCircuit(),
   pjud: makeCircuit(),
   pjudCauses: makeCircuit(),
@@ -48,6 +54,9 @@ const startQueues: Record<HostKey, Promise<unknown>> = {
   crossref: Promise.resolve(),
   doaj: Promise.resolve(),
   scielo: Promise.resolve(),
+  dt: Promise.resolve(),
+  sernac: Promise.resolve(),
+  cmf: Promise.resolve(),
   contraloria: Promise.resolve(),
   pjud: Promise.resolve(),
   pjudCauses: Promise.resolve(),
@@ -63,6 +72,9 @@ const active: Record<HostKey, number> = {
   crossref: 0,
   doaj: 0,
   scielo: 0,
+  dt: 0,
+  sernac: 0,
+  cmf: 0,
   contraloria: 0,
   pjud: 0,
   pjudCauses: 0,
@@ -78,6 +90,9 @@ const waiters: Record<HostKey, Array<() => void>> = {
   crossref: [],
   doaj: [],
   scielo: [],
+  dt: [],
+  sernac: [],
+  cmf: [],
   contraloria: [],
   pjud: [],
   pjudCauses: [],
@@ -93,6 +108,9 @@ const MAX_CONCURRENT: Record<HostKey, number> = {
   crossref: Number(process.env.CROSSREF_MAX_CONCURRENT ?? 2),
   doaj: Number(process.env.DOAJ_MAX_CONCURRENT ?? 2),
   scielo: Number(process.env.SCIELO_MAX_CONCURRENT ?? 2),
+  dt: Number(process.env.DT_MAX_CONCURRENT ?? 2),
+  sernac: Number(process.env.SERNAC_MAX_CONCURRENT ?? 2),
+  cmf: Number(process.env.CMF_MAX_CONCURRENT ?? 2),
   // Contraloria/PJUD/Diario Oficial have no official API — scraped best-effort,
   // so they get their own (conservative) buckets instead of sharing the
   // generic `websearch` circuit with DuckDuckGo/Yahoo scraping.
@@ -114,6 +132,9 @@ const MIN_INTERVAL_MS: Record<HostKey, number> = {
   crossref: Number(process.env.CROSSREF_MIN_INTERVAL_MS ?? 150),
   doaj: Number(process.env.DOAJ_MIN_INTERVAL_MS ?? 150),
   scielo: Number(process.env.SCIELO_MIN_INTERVAL_MS ?? 200),
+  dt: Number(process.env.DT_MIN_INTERVAL_MS ?? 300),
+  sernac: Number(process.env.SERNAC_MIN_INTERVAL_MS ?? 300),
+  cmf: Number(process.env.CMF_MIN_INTERVAL_MS ?? 300),
   contraloria: Number(process.env.CONTRALORIA_MIN_INTERVAL_MS ?? 300),
   pjud: Number(process.env.PJUD_MIN_INTERVAL_MS ?? 500),
   // Longer minimum spacing: each request may launch/reuse a real browser
@@ -167,6 +188,9 @@ export function upstreamHostKey(url: string): HostKey {
     if (host.includes("crossref.org")) return "crossref";
     if (host.includes("doaj.org")) return "doaj";
     if (host.includes("scielo")) return "scielo";
+    if (host.includes("dt.gob.cl") || host.includes("dirtrab.cl")) return "dt";
+    if (host.includes("sernac.cl")) return "sernac";
+    if (host.includes("cmfchile.cl")) return "cmf";
     // Official-but-unofficial-API sources scraped best-effort: isolated from
     // the generic websearch bucket so a CGR/PJUD/Diario Oficial outage or
     // block doesn't starve (or get starved by) DuckDuckGo/Yahoo scraping.

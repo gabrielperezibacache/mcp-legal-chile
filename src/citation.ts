@@ -20,11 +20,50 @@ export interface ChileanCitationInput {
   pagina?: string;
 }
 
+export type CitationStyle = "chile" | "bluebook" | "iso";
+
+const TRIBUNAL_ABBREV: Record<string, string> = {
+  "tribunal constitucional": "TC",
+  "corte suprema": "CS",
+  "corte de apelaciones": "CA",
+  "juzgado de letras del trabajo": "JLT",
+  "tribunal de defensa de la libre competencia": "TDLC",
+};
+
+export function abbreviateTribunal(tribunal?: string): string | undefined {
+  if (!tribunal?.trim()) return undefined;
+  const fold = tribunal
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .trim();
+  const ca = tribunal.match(
+    /corte\s+de\s+apelaciones\s+(?:de\s+)?(.+)/i,
+  );
+  if (ca?.[1]?.trim()) return `CA ${ca[1].trim()}`;
+  for (const [key, abbr] of Object.entries(TRIBUNAL_ABBREV)) {
+    const keyFold = key.normalize("NFD").replace(/\p{M}/gu, "");
+    if (fold === keyFold || fold === abbr.toLowerCase()) return abbr;
+    if (key !== "corte de apelaciones" && fold.includes(keyFold)) {
+      return abbr;
+    }
+  }
+  return tribunal;
+}
+
+function consideringText(raw: string): string {
+  const text = raw.trim();
+  return /^\d+$/.test(text)
+    ? `${text}º`
+    : text.replace(/\bconsiderandos?\b/i, "").trim();
+}
+
 /** Format citations for Chilean legal writing from already-fetched identifiers. */
 export function formatChileanCitation(input: ChileanCitationInput): {
   citation: string;
   url?: string;
   notes: string[];
+  estilo: CitationStyle;
 } {
   const notes: string[] = [
     "Cita generada solo con identificadores proporcionados; no inventa ROLs ni dictámenes.",
@@ -40,6 +79,7 @@ export function formatChileanCitation(input: ChileanCitationInput): {
         input.url ??
         "https://www.contraloria.cl/web/cgr/dictamenes-y-pronunciamientos-juridicos",
       notes,
+      estilo: "chile",
     };
   }
 
@@ -72,6 +112,7 @@ export function formatChileanCitation(input: ChileanCitationInput): {
         ...notes,
         "Cita doctrinal (no vinculante). Contrastar con texto oficial de LeyChile.",
       ],
+      estilo: "chile",
     };
   }
 
@@ -98,6 +139,7 @@ export function formatChileanCitation(input: ChileanCitationInput): {
           ? "Cita jurisprudencial con considerando: verifica el texto oficial (PDF/ficha)."
           : "Cita jurisprudencial: sin considerando, no afirmes ratio decidendi textual.",
       ],
+      estilo: "chile",
     };
   }
 
@@ -128,5 +170,54 @@ export function formatChileanCitation(input: ChileanCitationInput): {
     citation: parts.join(", "),
     url: input.url,
     notes,
+    estilo: "chile",
   };
+}
+
+/** Format with estilo chile | bluebook | iso. Never invents identifiers. */
+export function formatCitation(
+  input: ChileanCitationInput,
+  estilo: CitationStyle = "chile",
+): {
+  citation: string;
+  url?: string;
+  notes: string[];
+  estilo: CitationStyle;
+} {
+  if (estilo === "chile") return formatChileanCitation(input);
+
+  const notes = [
+    "Cita generada solo con identificadores proporcionados; no inventa ROLs ni dictámenes.",
+    `Estilo ${estilo}: aproximación tipográfica; verifica el manual de estilo de tu foro.`,
+  ];
+  let citation: string;
+  if (input.dictamen) {
+    citation =
+      estilo === "bluebook"
+        ? `Contraloría General de la República [Chile], Dictamen No. ${input.dictamen}${input.anio ? ` (${input.anio})` : ""}`
+        : `Contraloría General de la República (Chile). Dictamen N° ${input.dictamen}${input.anio ? `. ${input.anio}` : ""}.`;
+  } else if (input.autores || input.doi || input.revista) {
+    const authors = input.autores ?? "s/a";
+    if (estilo === "bluebook") {
+      citation = `${authors}${input.titulo ? `, "${input.titulo}"` : ""}${input.revista ? `, ${input.revista}` : ""}${input.volumen ? ` ${input.volumen}` : ""}${input.anio ? ` (${input.anio})` : ""}${input.pagina ? `, ${input.pagina}` : ""}${input.doi ? `, https://doi.org/${input.doi.replace(/^https?:\/\/doi\.org\//i, "")}` : ""}`.trim();
+    } else {
+      citation = `${authors}. (${input.anio ?? "s.f."}). ${input.titulo ?? "s/t"}${input.revista ? `. ${input.revista}` : ""}${input.volumen ? `, ${input.volumen}` : ""}${input.pagina ? `, ${input.pagina}` : ""}${input.doi ? `. Disponible en: https://doi.org/${input.doi.replace(/^https?:\/\/doi\.org\//i, "")}` : ""}.`;
+    }
+    notes.push(
+      "Cita doctrinal (no vinculante). Contrastar con texto oficial de LeyChile.",
+    );
+  } else if (input.rol) {
+    if (estilo === "bluebook") {
+      const court = abbreviateTribunal(input.tribunal) ?? input.tribunal ?? "Chile";
+      citation = `${court} [Chile], ${input.tipo ?? "Sentencia"} Rol ${input.rol}${input.considerando ? `, c. ${consideringText(input.considerando).replace(/º$/, "")}` : ""}${input.anio ? ` (${input.anio})` : ""}`;
+    } else {
+      citation = `${input.tribunal ?? "Tribunal"} (Chile). (${input.anio ?? "s.f."}). ${input.tipo ?? "Sentencia"} rol ${input.rol}${input.considerando ? `. Considerando ${consideringText(input.considerando)}` : ""}.`;
+    }
+  } else if (estilo === "bluebook") {
+    citation = `${input.tipo?.trim() || "Ley"}${input.numero ? ` No. ${input.numero}` : input.titulo ? ` "${input.titulo}"` : ""}${input.articulo ? `, art. ${input.articulo}` : ""}${input.inciso ? `, inc. ${input.inciso}` : ""}${input.letra ? `, lit. ${input.letra})` : ""} [Chile]`;
+  } else {
+    citation = `${input.tipo?.trim() || "Norma"}${input.numero ? ` N° ${input.numero}` : input.titulo && !input.numero ? `. ${input.titulo}` : ""}${input.anio ? ` (${input.anio})` : ""}${input.articulo ? `. Artículo ${input.articulo}` : ""}${input.inciso ? `, inciso ${input.inciso}` : ""}${input.letra ? `, literal ${input.letra})` : ""} [Chile].`;
+  }
+
+  return { citation, url: input.url, notes, estilo };
 }

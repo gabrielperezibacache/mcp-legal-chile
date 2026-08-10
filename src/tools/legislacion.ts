@@ -2,16 +2,22 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { formatChileanCitation } from "../citation.js";
 import {
-  listarNormasFrecuentes,
-  resolverNormaFrecuente,
-} from "../normaFrecuente.js";
-import {
   citarTextoLegal,
+  investigarNormaRelacionada,
+  searchReglamentos,
   searchLegislacion,
+  searchTratados,
   getNorma,
   estadoNorma,
   normasRelacionadas,
+  verificarCita,
 } from "../sources/index.js";
+import {
+  compararVersionNorma,
+  listarNormasFrecuentes as listarNormasFrecuentesMapa,
+  mapaNorma,
+  resolverNormaFrecuente as resolverNormaFrecuenteMapa,
+} from "../sources/normaMapa.js";
 import {
   findIncisoOrLiteral,
   normaToPlainText,
@@ -25,6 +31,7 @@ import {
   formatoSchema,
   legalExtractionFailure,
   limitSchema,
+  READ_ONLY_ANNOTATIONS,
   okSearch,
   okText,
   timedSearch,
@@ -57,10 +64,11 @@ export function registerLegislacionTools(server: McpServer): void {
       inputSchema: {
         consulta: z.string().min(2),
       },
+      annotations: READ_ONLY_ANNOTATIONS,
     },
     async ({ consulta }) => {
       try {
-        return okText(resolverNormaFrecuente(consulta));
+        return okText(resolverNormaFrecuenteMapa(consulta).markdown);
       } catch (error) {
         return fail(
           `Error resolver_norma_frecuente: ${error instanceof Error ? error.message : String(error)}`,
@@ -75,9 +83,29 @@ export function registerLegislacionTools(server: McpServer): void {
       title: "Listar normas frecuentes del catálogo",
       description:
         "Lista el catálogo hot local (idNorma, URL, aliases). No consulta BCN.",
-      inputSchema: {},
+      inputSchema: {
+        area: z
+          .enum([
+            "constitucional",
+            "civil",
+            "laboral",
+            "penal",
+            "administrativo",
+            "consumidor",
+            "ambiental",
+            "procesal",
+            "general",
+          ])
+          .optional(),
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
     },
-    async () => okText(listarNormasFrecuentes()),
+    async ({ area }) =>
+      okText(
+        area
+          ? listarNormasFrecuentesMapa(area).markdown
+          : listarNormasFrecuentesMapa().markdown,
+      ),
   );
 
   server.registerTool(
@@ -454,6 +482,202 @@ export function registerLegislacionTools(server: McpServer): void {
         return okText(quote.markdown);
       } catch (error) {
         return legalExtractionFailure(error, id_norma);
+      }
+    },
+  );
+
+  server.registerTool(
+    "mapa_norma",
+    {
+      title: "Mapear norma y artículos",
+      description:
+        "Recupera XML LeyChile y devuelve índice de artículos, materias y señales de derogación.",
+      inputSchema: {
+        id_norma: z.string().min(1),
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ id_norma, formato }) => {
+      try {
+        const result = await timedSearch("mapa_norma", (signal) =>
+          mapaNorma(id_norma, { signal }),
+        );
+        return okText(
+          formato === "json" ? formatResultsJson(result) : result.markdown,
+        );
+      } catch (error) {
+        return legalExtractionFailure(error, id_norma);
+      }
+    },
+  );
+
+  server.registerTool(
+    "comparar_version_norma",
+    {
+      title: "Comparar versiones de norma",
+      description:
+        "Compara dos versiones XML LeyChile identificadas por fecha/idVersion; si el histórico no está disponible, devuelve candidate con la historia oficial.",
+      inputSchema: {
+        id_norma: z.string().min(1),
+        fecha_a: z.string().min(1),
+        fecha_b: z.string().min(1),
+        articulo: z.string().optional(),
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ id_norma, fecha_a, fecha_b, articulo, formato }) => {
+      try {
+        const result = await timedSearch("comparar_version_norma", (signal) =>
+          compararVersionNorma({
+            id_norma,
+            fecha_a,
+            fecha_b,
+            articulo,
+            signal,
+          }),
+        );
+        return okText(
+          formato === "json" ? formatResultsJson(result) : result.markdown,
+        );
+      } catch (error) {
+        return legalExtractionFailure(error, id_norma);
+      }
+    },
+  );
+
+  server.registerTool(
+    "buscar_reglamentos",
+    {
+      title: "Buscar reglamentos y decretos",
+      description:
+        "Busca reglamentos, decretos y resoluciones en BCN/LeyChile; devuelve metadata candidate y enlaces oficiales.",
+      inputSchema: {
+        consulta: z.string().min(2),
+        tipo: z
+          .enum([
+            "decreto_supremo",
+            "decreto",
+            "resolucion",
+            "reglamento",
+            "auto_acordado",
+          ])
+          .optional(),
+        limite: limitSchema,
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ consulta, tipo, limite, formato }) => {
+      try {
+        return okSearch(
+          await timedSearch("buscar_reglamentos", (signal) =>
+            searchReglamentos(consulta, limite, { signal, tipo }),
+          ),
+          formato,
+        );
+      } catch (error) {
+        return softBcnFailure(error, "Error al buscar reglamentos");
+      }
+    },
+  );
+
+  server.registerTool(
+    "buscar_tratados",
+    {
+      title: "Buscar tratados y convenios",
+      description:
+        "Busca tratados, convenios y pactos publicados o referenciados en BCN/LeyChile. Verifica siempre el texto promulgatorio.",
+      inputSchema: {
+        consulta: z.string().min(2),
+        ambito: z.enum(["ddhh", "comercio", "otro"]).optional(),
+        limite: limitSchema,
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ consulta, ambito, limite, formato }) => {
+      try {
+        return okSearch(
+          await timedSearch("buscar_tratados", (signal) =>
+            searchTratados(consulta, limite, { signal, ambito }),
+          ),
+          formato,
+        );
+      } catch (error) {
+        return softBcnFailure(error, "Error al buscar tratados");
+      }
+    },
+  );
+
+  server.registerTool(
+    "investigar_norma_relacionada",
+    {
+      title: "Investigar normas y doctrina relacionadas",
+      description:
+        "Cruza relaciones estructuradas BCN, texto de un artículo opcional y doctrina candidata por keywords.",
+      inputSchema: {
+        id_norma: z.string().min(1),
+        articulo: z.string().optional(),
+        limite: limitSchema,
+        incluir_latam: z.boolean().default(false),
+        pais_latam: z.enum(["PE", "BR", "AR", "MX", "CO"]).optional(),
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({
+      id_norma,
+      articulo,
+      limite,
+      incluir_latam,
+      pais_latam,
+      formato,
+    }) => {
+      try {
+        const result = await timedSearch(
+          "investigar_norma_relacionada",
+          (signal) =>
+            investigarNormaRelacionada(id_norma, {
+              articulo,
+              limite,
+              incluirLatam: incluir_latam,
+              paisLatam: pais_latam,
+              signal,
+            }),
+        );
+        return okText(
+          formato === "json" ? formatResultsJson(result.pack) : result.markdown,
+        );
+      } catch (error) {
+        return softBcnFailure(error, "Error investigar_norma_relacionada");
+      }
+    },
+  );
+
+  server.registerTool(
+    "verificar_cita",
+    {
+      title: "Verificar una cita jurídica",
+      description:
+        "Clasifica y verifica una cita libre (artículo, ROL, dictamen o norma) sin inventar texto ni identificadores.",
+      inputSchema: {
+        cita: z.string().min(3),
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ cita, formato }) => {
+      try {
+        const result = await timedSearch("verificar_cita", (signal) =>
+          verificarCita(cita, { signal }),
+        );
+        return okText(
+          formato === "json" ? formatResultsJson(result) : result.markdown,
+        );
+      } catch (error) {
+        return softBcnFailure(error, "Error verificar_cita");
       }
     },
   );

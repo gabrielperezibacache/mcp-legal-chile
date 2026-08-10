@@ -147,3 +147,57 @@ export function parseCaseIdentifiers(
     tipo: detectTipoResolucion(hay),
   };
 }
+
+/** Infer judgment metadata from the heading of pasted text. */
+export function inferMetaFromPastedText(texto: string): {
+  tribunal?: string;
+  tipoResolucion?: string;
+  anio?: string;
+  fecha?: string;
+} {
+  const head = texto.slice(0, 1_800);
+  let tribunal: string | undefined;
+  if (/tribunal\s+constitucional/i.test(head)) {
+    tribunal = "Tribunal Constitucional";
+  } else if (/corte\s+suprema/i.test(head)) {
+    tribunal = "Corte Suprema";
+  } else {
+    const ca = head.match(
+      /corte\s+de\s+apelaciones(?:\s+de\s+([A-Za-zÁÉÍÓÚáéíóúñÑ\s]{2,40}?))?(?=\s|,|\.|$|rol|en\s)/i,
+    );
+    if (ca) {
+      const city = ca[1]?.trim().replace(/\s+/g, " ");
+      tribunal =
+        city && !/^(chile|la|el)\b/i.test(city)
+          ? `Corte de Apelaciones de ${city}`
+          : "Corte de Apelaciones";
+    } else if (/juzgado/i.test(head)) {
+      tribunal = "Juzgado";
+    }
+  }
+  const tipo = head.match(
+    /\b(Sentencia|Auto\s+acordado|Auto|Resoluci[oó]n|Decreto)\b/i,
+  )?.[1];
+  const fechaMatch = head.match(
+    /\b(?:a\s+)?(\d{1,2})\s+de\s+(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\s+de\s+((?:19|20)\d{2})\b/i,
+  );
+  const anio =
+    fechaMatch?.[3] ||
+    head.match(/\b((?:19|20)\d{2})\b/)?.[1] ||
+    head.match(/Rol\s+[0-9]+-(\d{2,4})/i)?.[1];
+  const anioNorm =
+    anio && anio.length === 2 ? `20${anio}` : anio;
+  return {
+    tribunal,
+    tipoResolucion: tipo
+      ? tipo
+          .split(/\s+/)
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join(" ")
+      : undefined,
+    anio: anioNorm,
+    fecha: fechaMatch
+      ? `${fechaMatch[1]} de ${fechaMatch[2].toLowerCase()} de ${fechaMatch[3]}`
+      : undefined,
+  };
+}

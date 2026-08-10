@@ -2,9 +2,14 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
   investigarTema,
+  resolverDictamenDt,
   resolverDictamen,
   searchAdministrativo,
+  searchCmf,
   searchDictamenes,
+  searchDictamenesDt,
+  searchRegulatorioOrganismo,
+  searchSernac,
   searchTodas,
 } from "../sources/index.js";
 import { citarDictamenPegado } from "../sources/dictamenQuote.js";
@@ -15,6 +20,8 @@ import {
   limitSchema,
   okSearch,
   okText,
+  READ_ONLY_ANNOTATIONS,
+  reportToolProgress,
   timed,
   timedSearch,
 } from "./helpers.js";
@@ -42,6 +49,63 @@ export function registerDictamenesTools(server: McpServer): void {
       } catch (error) {
         return fail(
           `Error dictámenes: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "buscar_dictamenes_dt",
+    {
+      title: "Buscar dictámenes de la Dirección del Trabajo",
+      description:
+        "Busca Ord./dictámenes DT en el portal oficial y sitios públicos; el cuerpo es verified solo si se recupera extracto HTML usable.",
+      inputSchema: {
+        consulta: z.string().min(2),
+        limite: limitSchema,
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ consulta, limite, formato }) => {
+      try {
+        return okSearch(
+          await timedSearch("buscar_dictamenes_dt", (signal) =>
+            searchDictamenesDt(consulta, limite, { signal }),
+          ),
+          formato,
+        );
+      } catch (error) {
+        return fail(
+          `Error dictámenes DT: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "resolver_dictamen_dt",
+    {
+      title: "Resolver dictamen DT por número",
+      description:
+        "Construye el enlace y busca un Ord./dictamen de la Dirección del Trabajo por número.",
+      inputSchema: {
+        numero: z.string().min(1),
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ numero, formato }) => {
+      try {
+        return okSearch(
+          await timedSearch("resolver_dictamen_dt", () =>
+            resolverDictamenDt(numero),
+          ),
+          formato,
+        );
+      } catch (error) {
+        return fail(
+          `Error resolver_dictamen_dt: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     },
@@ -97,6 +161,94 @@ export function registerDictamenesTools(server: McpServer): void {
       } catch (error) {
         return fail(
           `Error resolver_dictamen: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "buscar_circulares_sernac",
+    {
+      title: "Buscar circulares y actos SERNAC",
+      description:
+        "Busca actos públicos de SERNAC. Resultados de portal o metadata son candidate/link_only salvo extracto HTML usable.",
+      inputSchema: {
+        consulta: z.string().min(2),
+        limite: limitSchema,
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ consulta, limite, formato }) => {
+      try {
+        return okSearch(
+          await timedSearch("buscar_circulares_sernac", (signal) =>
+            searchSernac(consulta, limite, { signal }),
+          ),
+          formato,
+        );
+      } catch (error) {
+        return fail(
+          `Error buscar_circulares_sernac: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "buscar_circulares_cmf",
+    {
+      title: "Buscar circulares y actos CMF",
+      description:
+        "Busca circulares, oficios y resoluciones públicas de la CMF con clasificación de integridad.",
+      inputSchema: {
+        consulta: z.string().min(2),
+        limite: limitSchema,
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ consulta, limite, formato }) => {
+      try {
+        return okSearch(
+          await timedSearch("buscar_circulares_cmf", (signal) =>
+            searchCmf(consulta, limite, { signal }),
+          ),
+          formato,
+        );
+      } catch (error) {
+        return fail(
+          `Error buscar_circulares_cmf: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+  );
+
+  server.registerTool(
+    "buscar_regulatorio",
+    {
+      title: "Buscar acto regulatorio",
+      description:
+        "Busca actos regulatorios de SERNAC o CMF mediante sus portales y web pública.",
+      inputSchema: {
+        organismo: z.enum(["sernac", "cmf"]),
+        consulta: z.string().min(2),
+        limite: limitSchema,
+        formato: formatoSchema,
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+    },
+    async ({ organismo, consulta, limite, formato }) => {
+      try {
+        return okSearch(
+          await timedSearch("buscar_regulatorio", (signal) =>
+            searchRegulatorioOrganismo(organismo, consulta, limite, { signal }),
+          ),
+          formato,
+        );
+      } catch (error) {
+        return fail(
+          `Error buscar_regulatorio: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
     },
@@ -179,13 +331,32 @@ export function registerDictamenesTools(server: McpServer): void {
       inputSchema: {
         consulta: z.string().min(2),
         limite_por_fuente: z.number().int().min(1).max(8).default(2),
+        area: z
+          .enum([
+            "constitucional",
+            "civil",
+            "laboral",
+            "penal",
+            "administrativo",
+            "consumidor",
+            "ambiental",
+            "procesal",
+            "general",
+          ])
+          .optional(),
+        perfil: z.enum(["fast", "default", "deep"]).default("default"),
       },
     },
-    async ({ consulta, limite_por_fuente }) => {
+    async ({ consulta, limite_por_fuente, area, perfil }, extra) => {
       try {
         // Pack has a hard internal PACK_TOTAL_MS budget (~18s).
         const text = await timed("investigar_tema", () =>
-          investigarTema(consulta, limite_por_fuente),
+          investigarTema(consulta, limite_por_fuente, {
+            area,
+            perfil,
+            onProgress: (progress, total, message) =>
+              reportToolProgress(extra, progress, total, message),
+          }),
         );
         return okText(text);
       } catch (error) {

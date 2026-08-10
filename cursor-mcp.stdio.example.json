@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcp-legal-chile": {
+      "command": "npx",
+      "args": ["-y", "mcp-legal-chile"]
+    }
+  }
+}

@@ -1,10 +1,19 @@
 /** In-process metrics for SLOs and /metrics endpoint. */
 
 import pkg from "../package.json" with { type: "json" };
+import type { IntegrityKind } from "./integrity.js";
 
 type LatencyBucket = number[];
 
 const MAX_SAMPLES = 200;
+
+const integrityCounts: Record<IntegrityKind, number> = {
+  verified: 0,
+  candidate: 0,
+  portal_stub: 0,
+};
+
+const integrityByTool: Record<string, Record<IntegrityKind, number>> = {};
 
 const state = {
   startedAt: Date.now(),
@@ -46,6 +55,10 @@ function summarize(name: string): {
   };
 }
 
+function emptyIntegrity(): Record<IntegrityKind, number> {
+  return { verified: 0, candidate: 0, portal_stub: 0 };
+}
+
 export const metrics = {
   markRequest(): void {
     state.requests += 1;
@@ -67,6 +80,14 @@ export const metrics = {
   },
   markCircuitOpen(): void {
     state.circuitOpens += 1;
+  },
+  markIntegrity(kind: IntegrityKind, tool?: string): void {
+    integrityCounts[kind] += 1;
+    if (tool) {
+      const bucket =
+        integrityByTool[tool] ?? (integrityByTool[tool] = emptyIntegrity());
+      bucket[kind] += 1;
+    }
   },
   observe(name: string, ms: number): void {
     pushLatency(name, ms);
@@ -103,6 +124,50 @@ export const metrics = {
       "pjudCauses",
       "tool",
     ] as const;
+    const integrityTotal =
+      integrityCounts.verified +
+      integrityCounts.candidate +
+      integrityCounts.portal_stub;
+    const pct = (n: number) =>
+      integrityTotal === 0
+        ? null
+        : Math.round((n / integrityTotal) * 1000) / 10;
+    const toolP95 = summarize("tool").p95;
+    const leychileP95 = summarize("leychile_xml").p95;
+    const sloWarnings: string[] = [];
+    if (
+      toolP95 != null &&
+      toolP95 > slo.investigar_tema_total_p95_ms
+    ) {
+      sloWarnings.push(
+        `tool p95 ${toolP95}ms > investigar_tema target ${slo.investigar_tema_total_p95_ms}ms`,
+      );
+    }
+    if (
+      leychileP95 != null &&
+      leychileP95 > slo.obtener_articulo_cold_p95_ms
+    ) {
+      sloWarnings.push(
+        `leychile_xml p95 ${leychileP95}ms > cold article target ${slo.obtener_articulo_cold_p95_ms}ms`,
+      );
+    }
+    if (state.upstream429 > 0 && state.requests > 0) {
+      const rate = state.upstream429 / Math.max(1, state.requests);
+      if (rate > 0.2) {
+        sloWarnings.push(
+          `upstream429 rate ${(rate * 100).toFixed(1)}% (requests=${state.requests})`,
+        );
+      }
+    }
+    if (
+      integrityTotal >= 10 &&
+      pct(integrityCounts.portal_stub) != null &&
+      (pct(integrityCounts.portal_stub) as number) > 60
+    ) {
+      sloWarnings.push(
+        `portal_stubPct ${pct(integrityCounts.portal_stub)}% > 60% (revisar fuentes link-only)`,
+      );
+    }
     return {
       service: "mcp-legal-chile",
       version,
@@ -115,11 +180,23 @@ export const metrics = {
         upstream429: state.upstream429,
         upstreamErrors: state.upstreamErrors,
         circuitOpens: state.circuitOpens,
+        integrity: { ...integrityCounts },
+        integrityByTool: { ...integrityByTool },
+      },
+      integrityRates: {
+        total: integrityTotal,
+        verifiedPct: pct(integrityCounts.verified),
+        candidatePct: pct(integrityCounts.candidate),
+        portalStubPct: pct(integrityCounts.portal_stub),
       },
       latencies: Object.fromEntries(
         upstreamKeys.map((name) => [name, summarize(name)]),
       ),
       slo,
+      sloStatus: {
+        ok: sloWarnings.length === 0,
+        warnings: sloWarnings,
+      },
     };
   },
 };

@@ -1,4 +1,9 @@
-import { resolveHotNorma } from "../catalog.js";
+import {
+  hotNormasForArea,
+  inferLegalArea,
+  resolveHotNorma,
+  type LegalArea,
+} from "../catalog.js";
 import { remainingMs, runWithDeadline } from "../deadline.js";
 import {
   assistantIntegrityBlock,
@@ -8,7 +13,7 @@ import {
 import { nextStepFor, toBlockquote } from "../present.js";
 import type { SearchResponse } from "../types.js";
 import { extractRolMention, normalizeRol } from "../parsers.js";
-import { searchDictamenes } from "./dictamenes.js";
+import { getAdminAdapter, type AdminSourceId } from "./adapter.js";
 import { searchDoctrina } from "./doctrina.js";
 import {
   obtenerFalloTc,
@@ -49,6 +54,93 @@ function capMarkdown(text: string, maxChars: number): string {
   return `${text.slice(0, maxChars)}\n\n_…respuesta truncada para no saturar el contexto. Usa obtener_articulo / citar_texto_legal / obtener_fallo_tc para detalle._`;
 }
 
+export type PackProgressReporter = (
+  progress: number,
+  total: number,
+  message: string,
+) => Promise<void> | void;
+
+export type PackProfile = "fast" | "default" | "deep";
+
+export function resolvePackBudget(perfil?: PackProfile): {
+  profile: PackProfile;
+  totalMs: number;
+  perSourceMs: number;
+  doctrinaFast: boolean;
+} {
+  const fromEnv = (process.env.PACK_PROFILE ?? "").toLowerCase();
+  const profile: PackProfile =
+    perfil ??
+    (fromEnv === "fast" || fromEnv === "deep" || fromEnv === "default"
+      ? (fromEnv as PackProfile)
+      : "default");
+
+  // Preserve the remote deployment's explicit PACK_TOTAL_MS override.
+  if (process.env.PACK_TOTAL_MS && !perfil && !fromEnv) {
+    const totalMs = Number(process.env.PACK_TOTAL_MS);
+    return {
+      profile: "default",
+      totalMs,
+      perSourceMs: Number(
+        process.env.PACK_TIMEOUT_MS ??
+          Math.min(11_000, Math.floor(totalMs * 0.65)),
+      ),
+      doctrinaFast: true,
+    };
+  }
+  if (profile === "fast") {
+    return {
+      profile,
+      totalMs: Number(process.env.PACK_FAST_MS ?? 8_000),
+      perSourceMs: Number(process.env.PACK_FAST_TIMEOUT_MS ?? 5_000),
+      doctrinaFast: true,
+    };
+  }
+  if (profile === "deep") {
+    return {
+      profile,
+      totalMs: Number(process.env.PACK_DEEP_MS ?? 25_000),
+      perSourceMs: Number(process.env.PACK_DEEP_TIMEOUT_MS ?? 16_000),
+      doctrinaFast: false,
+    };
+  }
+  const totalMs = Number(process.env.PACK_TOTAL_MS ?? 18_000);
+  return {
+    profile: "default",
+    totalMs,
+    perSourceMs: Number(
+      process.env.PACK_TIMEOUT_MS ?? Math.min(11_000, Math.floor(totalMs * 0.65)),
+    ),
+    doctrinaFast: true,
+  };
+}
+
+export function pickAdminSearch(
+  consulta: string,
+  area?: LegalArea,
+): AdminSourceId {
+  if (
+    area === "laboral" ||
+    /\b(?:dt|direcci[oó]n del trabajo|ord\.?)\b/i.test(consulta)
+  ) {
+    return "dt";
+  }
+  if (
+    /\b(?:cmf|valores|fintech|banco(?:s)?|mercado financiero)\b/i.test(
+      consulta,
+    )
+  ) {
+    return "cmf";
+  }
+  if (
+    area === "consumidor" ||
+    /\b(?:sernac|consumidor|ley del consumidor)\b/i.test(consulta)
+  ) {
+    return "sernac";
+  }
+  return "cgr";
+}
+
 /**
  * Pack orquestado con presupuesto global duro.
  * Diseño: responder siempre antes de PACK_TOTAL_MS con resultados parciales OK.
@@ -57,48 +149,73 @@ function capMarkdown(text: string, maxChars: number): string {
 export async function investigarTema(
   consulta: string,
   limitePorFuente = 3,
+  opts: {
+    area?: LegalArea;
+    perfil?: PackProfile;
+    onProgress?: PackProgressReporter;
+  } = {},
 ): Promise<string> {
   const startedAt = Date.now();
-  const totalMs = Number(process.env.PACK_TOTAL_MS ?? 18_000);
-  const perSourceMs = Number(
-    process.env.PACK_TIMEOUT_MS ?? Math.min(11_000, Math.floor(totalMs * 0.65)),
+  const { profile, totalMs, perSourceMs, doctrinaFast } = resolvePackBudget(
+    opts.perfil,
   );
   const maxChars = Number(process.env.PACK_MAX_CHARS ?? 10_000);
   const articleQuoteChars = Number(process.env.PACK_ARTICLE_CHARS ?? 1_200);
   const pending: string[] = [];
+  const area = opts.area ?? inferLegalArea(consulta);
+  const areaHot = area ? hotNormasForArea(area) : [];
+  const enrichedConsulta =
+    area && area !== "general" && !consulta.toLowerCase().includes(area)
+      ? `${consulta} ${area}`
+      : consulta;
   const rolMention = extractRolMention(consulta);
   const tcMention = isTcMention(consulta);
   const packController = new AbortController();
   const packTimer = setTimeout(() => packController.abort(), totalMs);
+  const tick = async (progress: number, message: string) => {
+    await opts.onProgress?.(progress, 6, message);
+  };
 
   try {
+    await tick(1, "Buscando legislación, jurisprudencia, doctrina y actos administrativos…");
+    const adminKind = pickAdminSearch(consulta, area);
+    const adminAdapter = getAdminAdapter(adminKind);
     const [leg, juris, doc, dict, rolRes] = await Promise.allSettled([
       runWithDeadline(
         "legislacion",
         perSourceMs,
-        (signal) => searchLegislacion(consulta, limitePorFuente, { signal }),
+        (signal) =>
+          searchLegislacion(enrichedConsulta, limitePorFuente, { signal }),
         packController.signal,
       ),
       runWithDeadline(
         "jurisprudencia",
         perSourceMs,
-        (signal) => searchJurisprudencia(consulta, limitePorFuente, { signal }),
+        (signal) =>
+          searchJurisprudencia(enrichedConsulta, limitePorFuente, {
+            signal,
+            tribunal:
+              area === "constitucional"
+                ? "Tribunal Constitucional"
+                : undefined,
+          }),
         packController.signal,
       ),
       runWithDeadline(
         "doctrina",
         perSourceMs,
         (signal) =>
-          searchDoctrina(consulta, limitePorFuente, {
+          searchDoctrina(enrichedConsulta, limitePorFuente, {
             signal,
-            fast: true,
+            fast: doctrinaFast,
           }),
         packController.signal,
       ),
       runWithDeadline(
         "dictamenes",
         perSourceMs,
-        (signal) => searchDictamenes(consulta, limitePorFuente, { signal }),
+        (signal) =>
+          adminAdapter.search(enrichedConsulta, limitePorFuente, { signal }),
         packController.signal,
       ),
       rolMention
@@ -116,6 +233,7 @@ export async function investigarTema(
           )
         : Promise.resolve(undefined),
     ]);
+    await tick(2, "Fuentes en paralelo listas; armando marco normativo…");
 
     const rolResolved =
       rolRes.status === "fulfilled" ? rolRes.value : undefined;
@@ -160,18 +278,29 @@ export async function investigarTema(
       if (next) nextSteps.push(`- ${next}`);
     };
 
+    await tick(3, "Redactando secciones de legislación y texto legal…");
     const sections: string[] = [
       `# Pack de investigación`,
       "",
       `**Consulta:** ${consulta}`,
+      area ? `**Área:** \`${area}\`${opts.area ? "" : " _(inferida)_"}` : null,
+      `**Perfil:** \`${profile}\``,
       "",
       `_Presupuesto ${totalMs}ms · resultados parciales OK. Usa solo lo listado. Prohibido inventar fallos, dictámenes, artículos o considerandos._`,
       "",
       "_Formato fijo: (1) fuentes por área → (2) clasificación Verificado / Por verificar / Portales → (3) Próximos pasos._",
       "",
-    ];
+    ].filter((x): x is string => x != null);
 
     sections.push("## 1. Marco normativo");
+    if (areaHot.length) {
+      sections.push(
+        `_Normas frecuentes del área:_ ${areaHot
+          .slice(0, 5)
+          .map((n) => `${n.label} (\`${n.idNorma}\`)`)
+          .join("; ")}`,
+      );
+    }
     if (leg.status === "fulfilled") {
       if (leg.value.results.length) {
         for (const r of leg.value.results) {
@@ -199,13 +328,25 @@ export async function investigarTema(
           }
         }
       }
+    } else if (areaHot.length) {
+      pending.push("legislacion");
+      for (const n of areaHot.slice(0, limitePorFuente)) {
+        sections.push(`- **${n.label}** _(catálogo hot · área ${area})_`);
+        sections.push(`  - idNorma: \`${n.idNorma}\``);
+        sections.push(
+          `  - URL: https://www.bcn.cl/leychile/navegar?idNorma=${n.idNorma}`,
+        );
+        sections.push(
+          `  - → \`mapa_norma\` / \`citar_texto_legal\` con idNorma \`${n.idNorma}\``,
+        );
+      }
     } else {
       pending.push("legislacion");
       sections.push("- Sin resultados de legislación en el tiempo disponible.");
     }
 
     const articulo = extractArticuloMention(consulta);
-    const hot = resolveHotNorma(consulta);
+    const hot = resolveHotNorma(consulta) ?? areaHot[0];
     const idFromLeg =
       leg.status === "fulfilled"
         ? leg.value.results.find((r) => r.id)?.id
@@ -392,14 +533,20 @@ export async function investigarTema(
       }
     };
 
+    await tick(4, "Compilando jurisprudencia, actos administrativos y doctrina…");
     dumpSource(
       "2. Jurisprudencia (verificar texto oficial)",
       juris,
       "jurisprudencia",
     );
-    dumpSource("3. Dictámenes (verificar texto oficial)", dict, "dictamenes");
+    dumpSource(
+      `3. Actos administrativos (${adminKind === "cgr" ? "CGR" : adminKind.toUpperCase()}; verificar texto oficial)`,
+      dict,
+      "dictamenes",
+    );
     dumpSource("4. Doctrina académica (no vinculante)", doc, "doctrina");
 
+    await tick(5, "Cerrando lagunas y advertencias de integrity…");
     const elapsed = Date.now() - startedAt;
     const uniq = (items: string[]) => [...new Set(items)];
 
@@ -450,6 +597,7 @@ export async function investigarTema(
       assistantIntegrityBlock(),
     );
 
+    await tick(6, "Pack listo");
     return capMarkdown(sections.join("\n"), maxChars);
   } finally {
     clearTimeout(packTimer);

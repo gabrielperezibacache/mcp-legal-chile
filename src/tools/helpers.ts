@@ -19,6 +19,41 @@ export const SEARCH_TOOL_TIMEOUT_MS = Number(
   process.env.SEARCH_TOOL_TIMEOUT_MS ?? 22_000,
 );
 
+/** All MCP Legal tools only read public sources or user-provided text. */
+export const READ_ONLY_ANNOTATIONS = {
+  readOnlyHint: true,
+  idempotentHint: true,
+  openWorldHint: true,
+} as const;
+
+export async function reportToolProgress(
+  extra: unknown,
+  progress: number,
+  total: number,
+  message: string,
+): Promise<void> {
+  const ctx = extra as
+    | {
+        _meta?: { progressToken?: string | number };
+        sendNotification?: (notification: {
+          method: string;
+          params: Record<string, unknown>;
+        }) => Promise<void>;
+      }
+    | null
+    | undefined;
+  const token = ctx?._meta?.progressToken;
+  if (token === undefined || !ctx?.sendNotification) return;
+  try {
+    await ctx.sendNotification({
+      method: "notifications/progress",
+      params: { progressToken: token, progress, total, message },
+    });
+  } catch {
+    /* Optional MCP progress notifications must never fail a tool. */
+  }
+}
+
 export const latamPaisSchema = z
   .enum(["PE", "BR", "AR", "MX", "CO"])
   .describe("País LATAM: PE, BR, AR, MX, CO");
@@ -47,6 +82,28 @@ export function okSearch(data: SearchResponse, formato: "markdown" | "json") {
 
 export function okText(text: string) {
   return { content: [{ type: "text" as const, text }] };
+}
+
+export function okStructured(
+  text: string,
+  structuredContent: Record<string, unknown>,
+) {
+  return {
+    content: [{ type: "text" as const, text }],
+    structuredContent,
+  };
+}
+
+export function needInput(message: string, sugerencias: string[] = []) {
+  return okText(
+    [
+      "Falta información para continuar (no se inventará).",
+      message,
+      ...(sugerencias.length
+        ? ["", "Sugerencias:", ...sugerencias.map((s) => `- ${s}`)]
+        : []),
+    ].join("\n"),
+  );
 }
 
 export function fail(message: string) {

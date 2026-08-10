@@ -1,0 +1,11 @@
+{
+  "bibjson": {
+    "title": "Datos personales y Constitución",
+    "author": [{ "name": "Pérez, Ana" }],
+    "year": "2022",
+    "journal": { "title": "Revista de Derecho" },
+    "identifier": [{ "type": "doi", "id": "10.4067/S0718-00122022000100123" }],
+    "link": [{ "url": "https://doi.org/10.4067/S0718-00122022000100123" }],
+    "abstract": "Análisis del derecho a la protección de datos en Chile."
+  }
+}

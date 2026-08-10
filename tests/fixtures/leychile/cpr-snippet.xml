@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture recortado para CI offline. Refrescar: curl -sL 'https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=242302' -->
+<Norma normaId="242302" fechaVersion="2024-01-01" derogado="no">
+  <Identificador fechaPublicacion="1980-10-24">
+    <TiposNumeros>
+      <TipoNumero>
+        <Tipo>Constitución Política</Tipo>
+        <Numero></Numero>
+      </TipoNumero>
+    </TiposNumeros>
+    <Organismos><Organismo>Congreso Nacional</Organismo></Organismos>
+  </Identificador>
+  <Metadatos>
+    <TituloNorma>Constitución Política de la República de Chile</TituloNorma>
+    <Materias><Materia>Derecho Constitucional</Materia></Materias>
+  </Metadatos>
+  <EstructurasFuncionales>
+    <EstructuraFuncional tipoParte="Capítulo" idParte="1">
+      <Texto></Texto>
+      <Metadatos><TituloParte>Capítulo I</TituloParte></Metadatos>
+      <EstructurasFuncionales>
+        <EstructuraFuncional tipoParte="Artículo" idParte="10">
+          <Texto>Artículo 1°.- Las personas nacen libres e iguales en dignidad y derechos.
+
+La familia es el núcleo fundamental de la sociedad.
+
+El Estado está al servicio de la persona humana.</Texto>
+          <Metadatos>
+            <TituloParte>Artículo 1</TituloParte>
+            <NombreParte>1 </NombreParte>
+          </Metadatos>
+        </EstructuraFuncional>
+        <EstructuraFuncional tipoParte="Artículo" idParte="19">
+          <Texto>Artículo 19.- La Constitución asegura a todas las personas:
+
+1º.- El derecho a la vida y a la integridad física y psíquica de la persona.
+
+2º.- La igualdad ante la ley. En Chile no hay persona ni grupo privilegiados.
+
+3º.- La igual protección de la ley en el ejercicio de sus derechos.</Texto>
+          <Metadatos>
+            <TituloParte>Artículo 19</TituloParte>
+            <NombreParte>19 </NombreParte>
+          </Metadatos>
+        </EstructuraFuncional>
+        <EstructuraFuncional tipoParte="Artículo" idParte="37b">
+          <Texto>Artículo 37 bis.- Los ministros de Estado deberán informar al Congreso Nacional.</Texto>
+          <Metadatos>
+            <TituloParte>Artículo 37 bis</TituloParte>
+            <NombreParte>37 BIS</NombreParte>
+          </Metadatos>
+        </EstructuraFuncional>
+      </EstructurasFuncionales>
+    </EstructuraFuncional>
+  </EstructurasFuncionales>
+</Norma>

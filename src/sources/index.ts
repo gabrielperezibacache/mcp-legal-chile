@@ -8,7 +8,18 @@ export {
 } from "./doctrina.js";
 import { searchDoctrina } from "./doctrina.js";
 import { searchDictamenes, resolverDictamen } from "./dictamenes.js";
+import {
+  resolverDictamenDt,
+  searchDictamenesDt,
+} from "./dictamenesDt.js";
 import { searchAdministrativo } from "./administrativo.js";
+import { investigarNormaRelacionada } from "./crossLink.js";
+import {
+  searchCmf,
+  searchRegulatorioOrganismo,
+  searchSernac,
+} from "./regulatorios.js";
+import { importarFallo } from "./falloImport.js";
 import {
   obtenerFalloTc,
   resolverRol,
@@ -23,10 +34,19 @@ export {
   normasRelacionadas,
   parseLeyChileBuscadorHtml,
   searchLegislacion,
+  searchReglamentos,
+  searchTratados,
 } from "./legislacion.js";
+export {
+  compararVersionNorma,
+  listarNormasFrecuentes,
+  mapaNorma,
+  resolverNormaFrecuente,
+} from "./normaMapa.js";
 import { citarJurisprudencia } from "./jurisQuote.js";
 import { citarTextoLegal } from "./legalQuote.js";
 import { investigarTema } from "./research.js";
+import { verificarCita } from "./verificarCita.js";
 import { remainingMs, runWithDeadline } from "../deadline.js";
 export {
   buscarCausaPjud,
@@ -44,21 +64,40 @@ export { indiceConsiderandos } from "./indiceConsiderandos.js";
 export {
   citarJurisprudencia,
   citarTextoLegal,
+  importarFallo,
+  investigarNormaRelacionada,
   investigarTema,
   obtenerFalloTc,
   resolverDictamen,
+  resolverDictamenDt,
   resolverRol,
   resolveRolToMarkdown,
   searchAdministrativo,
+  searchCmf,
   searchDictamenes,
+  searchDictamenesDt,
   searchJurisprudencia,
+  searchRegulatorioOrganismo,
+  searchSernac,
   searchTribunalConstitucional,
+  verificarCita,
 };
+
+export {
+  getAdminAdapter,
+  listAdminAdapters,
+} from "./adapter.js";
+
+export {
+  pickAdminSearch,
+  resolvePackBudget,
+} from "./research.js";
 
 export {
   findArticulo,
   findIncisoOrLiteral,
   normaToPlainText,
+  parseNormaFromXml,
   parseNormaTexto,
 } from "./normaTexto.js";
 

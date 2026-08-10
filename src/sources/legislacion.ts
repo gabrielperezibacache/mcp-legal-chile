@@ -670,3 +670,88 @@ LIMIT 30
     };
   }
 }
+
+export type ReglamentoTipoHint =
+  | "decreto_supremo"
+  | "decreto"
+  | "resolucion"
+  | "reglamento"
+  | "auto_acordado";
+
+/**
+ * Search secondary legislation through the same public BCN/LeyChile metadata
+ * path as `buscar_legislacion`. The result remains candidate metadata until
+ * the caller retrieves the official XML text.
+ */
+export async function searchReglamentos(
+  query: string,
+  limit = 8,
+  opts: {
+    signal?: AbortSignal;
+    tipo?: ReglamentoTipoHint;
+  } = {},
+): Promise<SearchResponse> {
+  const prefix =
+    opts.tipo === "decreto_supremo"
+      ? "decreto supremo"
+      : opts.tipo === "decreto"
+        ? "decreto"
+        : opts.tipo === "resolucion"
+          ? "resolucion"
+          : opts.tipo === "reglamento"
+            ? "reglamento"
+            : opts.tipo === "auto_acordado"
+              ? "auto acordado"
+              : "decreto reglamento resolucion";
+  const result = await searchLegislacion(`${prefix} ${query}`.trim(), limit, {
+    signal: opts.signal,
+  });
+  return {
+    ...result,
+    query,
+    warnings: [
+      "Metadata BCN/LeyChile (candidate). Texto íntegro: obtener_articulo / citar_texto_legal con el idNorma.",
+      ...(result.warnings ?? []),
+    ],
+    searchUrls: {
+      ...(result.searchUrls ?? {}),
+      reglamentos: `https://www.bcn.cl/leychile/consulta/buscador?termino=${encodeURIComponent(`${prefix} ${query}`.trim())}`,
+    },
+  };
+}
+
+export async function searchTratados(
+  query: string,
+  limit = 8,
+  opts: {
+    signal?: AbortSignal;
+    ambito?: "ddhh" | "comercio" | "otro";
+  } = {},
+): Promise<SearchResponse> {
+  const prefix =
+    opts.ambito === "ddhh"
+      ? "derechos humanos tratado convenio"
+      : opts.ambito === "comercio"
+        ? "comercio tratado convenio"
+        : "tratado convenio pacto";
+  const enriched =
+    opts.ambito === "ddhh" &&
+    !/derechos?\s*humanos|cidh|pidcp|cedaw/i.test(query)
+      ? `${query} derechos humanos`
+      : query;
+  const result = await searchLegislacion(`${prefix} ${enriched}`.trim(), limit, {
+    signal: opts.signal,
+  });
+  return {
+    ...result,
+    query,
+    warnings: [
+      "Tratado/convenio como metadata candidate. Confirma el texto promulgatorio y la fuente oficial antes de citar.",
+      ...(result.warnings ?? []),
+    ],
+    searchUrls: {
+      ...(result.searchUrls ?? {}),
+      tratados: `https://www.bcn.cl/leychile/consulta/buscador?termino=${encodeURIComponent(`${prefix} ${enriched}`.trim())}`,
+    },
+  };
+}

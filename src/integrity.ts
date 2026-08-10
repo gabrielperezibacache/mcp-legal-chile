@@ -1,4 +1,5 @@
 import type { CitationResult, EvidenceKind, SearchResponse } from "./types.js";
+import { metrics } from "./metrics.js";
 
 /** Rules injected into every search/pack response for the consuming LLM. */
 export const ANTI_HALLUCINATION_RULES = [
@@ -12,6 +13,14 @@ export const ANTI_HALLUCINATION_RULES = [
 
 export type IntegrityKind = "verified" | "candidate" | "portal_stub";
 
+const MIN_VERIFIED_TEXT = 40;
+
+/** True when the result carries usable recovered body text (not just a title). */
+export function hasRecoveredText(result: CitationResult): boolean {
+  const summary = result.summary?.replace(/\s+/g, " ").trim() ?? "";
+  return summary.length >= MIN_VERIFIED_TEXT;
+}
+
 export function integrityOf(result: CitationResult): IntegrityKind {
   const raw = result.metadata?.integrity;
   if (raw === "verified" || raw === "candidate" || raw === "portal_stub") {
@@ -21,6 +30,37 @@ export function integrityOf(result: CitationResult): IntegrityKind {
   if (result.evidence === "full_text") return "verified";
   if (result.evidence === "metadata") return "candidate";
   return "candidate";
+}
+
+/**
+ * Enforce honesty: verified requires recovered text.
+ * Returns demoted result + whether demotion happened.
+ */
+export function enforceVerifiedHasText(result: CitationResult): {
+  result: CitationResult;
+  demoted: boolean;
+} {
+  const evidence = result.evidence ?? "link_only";
+  const integrity = integrityOf({ ...result, evidence });
+  if (integrity === "verified" && !hasRecoveredText(result)) {
+    return {
+      demoted: true,
+      result: withIntegrity(
+        {
+          ...result,
+          evidence: evidence === "full_text" ? "link_only" : evidence,
+          metadata: {
+            ...(result.metadata ?? {}),
+            demotedFromVerified: true,
+            demotionReason: "verified_without_recovered_text",
+          },
+        },
+        "candidate",
+        evidence === "full_text" ? "link_only" : evidence,
+      ),
+    };
+  }
+  return { demoted: false, result: withIntegrity(result, integrity, evidence) };
 }
 
 export function withIntegrity(
@@ -48,11 +88,17 @@ export function hasTraceableUrl(result: CitationResult): boolean {
 /**
  * Seal a search response so the assistant cannot treat stubs/empty as verified hits.
  */
-export function sealSearchResponse(response: SearchResponse): SearchResponse {
+export function sealSearchResponse(
+  response: SearchResponse,
+  opts: { tool?: string } = {},
+): SearchResponse {
+  let demotedCount = 0;
   const sealedResults = response.results.filter(hasTraceableUrl).map((r) => {
-    const evidence = r.evidence ?? "link_only";
-    const integrity = integrityOf({ ...r, evidence });
-    return withIntegrity(r, integrity, evidence);
+    const { result, demoted } = enforceVerifiedHasText(r);
+    if (demoted) demotedCount += 1;
+    const integrity = integrityOf(result);
+    metrics.markIntegrity(integrity, opts.tool ?? response.source);
+    return result;
   });
 
   const stubCount = sealedResults.filter(
@@ -64,6 +110,11 @@ export function sealSearchResponse(response: SearchResponse): SearchResponse {
   warnings.push(
     "Integridad: no inventes fuentes. Solo cita lo listado con su URL y nivel de evidencia.",
   );
+  if (demotedCount > 0) {
+    warnings.push(
+      `${demotedCount} resultado(s) degradados de verified→candidate (sin texto recuperado).`,
+    );
+  }
   if (realCount === 0 && stubCount > 0) {
     warnings.push(
       "Solo hay enlaces a portales (portal_stub): NO son fallos/dictámenes encontrados. No cites contenido.",

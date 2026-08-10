@@ -1,4 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { xmlCache } from "../cache.js";
 import { numberToOrdinalWords, ordinalWordsToNumber } from "./considerandos.js";
 import { fetchTextWithRetry, HttpStatusError } from "../util.js";
@@ -36,6 +39,29 @@ const NS_STRIP = /\{[^}]+\}/g;
 /** Short negative cache so a 429 does not hammer LeyChile for the same idNorma. */
 const XML_429_CACHE_MS = Number(process.env.LEYCHILE_429_CACHE_MS ?? 60_000);
 const xml429Until = new Map<string, number>();
+
+/** Offline demo fixtures used by CI/smoke tests without contacting LeyChile. */
+const DEMO_FIXTURES: Record<string, string> = {
+  "242302": "cpr-snippet.xml",
+  "207436": "ct-literales-bis.xml",
+};
+
+function demoModeEnabled(): boolean {
+  return process.env.DEMO_MODE === "1" || process.env.DEMO_MODE === "true";
+}
+
+function loadDemoFixtureXml(idNorma: string): string {
+  const code = idNorma.replace(/\D/g, "");
+  const file = DEMO_FIXTURES[code];
+  if (!file) {
+    throw new LeyChileXmlError(
+      code,
+      `DEMO_MODE: idNorma ${code} no tiene fixture (disponibles: ${Object.keys(DEMO_FIXTURES).join(", ")})`,
+    );
+  }
+  const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
+  return readFileSync(join(root, "tests/fixtures/leychile", file), "utf8");
+}
 
 export class LeyChileRateLimitError extends Error {
   idNorma: string;
@@ -82,6 +108,9 @@ export interface NormaTexto {
     idParte?: string;
     texto: string;
     url: string;
+    derogado?: string;
+    numeroSource?: "nombreParte" | "texto" | "titulo";
+    fragmentSource?: "labeled" | "numerales" | "paragraphs" | "none";
     incisos: Array<{ label: string; texto: string }>;
     literales: Array<{ letra: string; texto: string }>;
   }>;
@@ -199,30 +228,67 @@ export function normalizeArticleNumber(texto: string): string | undefined {
   // never mistaken for the article's own heading/number. Accepts both the
   // full "Artículo" and the abbreviated "Art." forms LeyChile mixes freely.
   const match = texto.match(
-    /^art(?:[ií]culo|\.)\s*([0-9]+(?:\s*(?:bis|ter|qu[aá]ter|quinquies))?(?:º|°)?)/i,
+    /^art(?:[ií]culo|\.)\s*([0-9]+(?:\s*(?:bis|ter|qu[aá]ter|quter|quinquies|sexies))?(?:\s*(?!o\b)[A-Za-z])?(?:º|°)?)/i,
   );
   if (!match) return undefined;
-  return match[1].replace(/\s+/g, " ").replace(/[º°]/g, "").trim();
+  return normalizeFromNombreParte(match[1]);
 }
+
+const SUFFIX_ALIASES: Record<string, string> = {
+  bis: "bis",
+  ter: "ter",
+  quater: "quater",
+  quáter: "quater",
+  quter: "quater",
+  quinquies: "quinquies",
+  sexies: "sexies",
+};
 
 /** Extracts the leading numeric/bis-ter token from a <NombreParte> value
  * like "58 bis" or "12 (DEL ART. 2)", stripping the "(DEL ART. N)" suffix
  * that LeyChile appends when an article was inserted via a "Doble
  * Articulado" (a law's own art. 2 introducing a new codified text). */
 export function normalizeFromNombreParte(
-  nombreParte: string,
+  nombreParte?: string,
 ): string | undefined {
-  const match = nombreParte.match(
-    /^\s*([0-9]+(?:\s*(?:bis|ter|qu[aá]ter|quinquies))?)/i,
+  if (!nombreParte?.trim()) return undefined;
+  const raw = nombreParte
+    .trim()
+    .replace(/^art[ií]culo\s*/i, "")
+    .replace(/\s*\(del\s+art(?:[ií]culo)?\.?\s*\d+[^)]*\)\s*$/i, "")
+    .replace(/[º°]/g, "")
+    .replace(/\s+/g, " ");
+  const match = raw.match(
+    /^(\d+)\s*(bis|ter|qu[aá]ter|quter|quinquies|sexies)?(?:\s*((?!o\b)[A-Za-z]))?$/i,
   );
-  if (!match) return undefined;
-  return match[1].replace(/\s+/g, " ").trim();
+  if (!match) {
+    // Keep a useful numeric fallback for LeyChile's "(DEL ART. N)" suffix.
+    const loose = raw.match(/^(\d+)(.*)$/);
+    if (!loose) return undefined;
+    const rest = loose[2]!
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .replace(/quter/g, "quater")
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return rest ? `${loose[1]} ${rest}` : loose[1];
+  }
+  const suffix = match[2]
+    ? SUFFIX_ALIASES[match[2].toLowerCase()] ?? match[2].toLowerCase()
+    : undefined;
+  const letter = match[3]?.toUpperCase();
+  return [match[1], suffix, letter].filter(Boolean).join(" ");
 }
 
-function normalizeArticleKey(texto: string): string {
+export function normalizeArticleKey(texto: string): string {
   return texto
     .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
     .replace(/art[ií]culo/gi, "")
+    .replace(/quter/g, "quater")
     .replace(/[º°]/g, "")
     .replace(/\s+/g, "")
     .trim();
@@ -256,6 +322,7 @@ function parsePart(node: Record<string, unknown>): NormaPart {
 export function parseIncisosAndLiterales(texto: string): {
   incisos: Array<{ label: string; texto: string }>;
   literales: Array<{ letra: string; texto: string }>;
+  fragmentSource: "labeled" | "numerales" | "paragraphs" | "none";
 } {
   const literales: Array<{ letra: string; texto: string }> = [];
   const litRe =
@@ -265,6 +332,18 @@ export function parseIncisosAndLiterales(texto: string): {
     const letra = m[1].replace(")", "");
     const body = m[2].trim();
     if (body.length > 8) literales.push({ letra, texto: body });
+  }
+  const litLineRe =
+    /(?:^|\n)\s*([a-z])\s*\)\s*([\s\S]*?)(?=\n\s*[a-z]\s*\)|$)/gi;
+  while ((m = litLineRe.exec(texto)) !== null) {
+    const letra = m[1]!.toLowerCase();
+    const body = m[2]!.replace(/\s+/g, " ").trim();
+    if (
+      body.length > 8 &&
+      !literales.some((literal) => literal.letra.toLowerCase() === letra)
+    ) {
+      literales.push({ letra, texto: body });
+    }
   }
 
   const incisos: Array<{ label: string; texto: string }> = [];
@@ -297,6 +376,28 @@ export function parseIncisosAndLiterales(texto: string): {
         incisos.push({ label: labelMatch[1], texto: chunk });
       }
     }
+    return { incisos, literales, fragmentSource: "labeled" };
+  }
+
+  const numeralMatches = [
+    ...texto.matchAll(
+      /(?:^|\n)\s*(\d{1,3})\s*[º°o]?\s*[.\-–—:]\s*/g,
+    ),
+  ];
+  if (numeralMatches.length >= 2) {
+    for (let i = 0; i < numeralMatches.length; i++) {
+      const match = numeralMatches[i]!;
+      const start = (match.index ?? 0) + match[0].lastIndexOf(match[1]!);
+      const next = numeralMatches[i + 1];
+      const end = next?.index ?? texto.length;
+      const body = texto
+        .slice(start + match[0].length - match[0].lastIndexOf(match[1]!), end)
+        .trim();
+      if (body.length > 8) {
+        incisos.push({ label: match[1]!, texto: body });
+      }
+    }
+    return { incisos, literales, fragmentSource: "numerales" };
   } else {
     // Approximate numbered paragraphs as inciso 1, 2, ...
     // In Chilean drafting the first paragraph of the article *is* inciso 1
@@ -310,7 +411,12 @@ export function parseIncisosAndLiterales(texto: string): {
     });
   }
 
-  return { incisos, literales };
+  return {
+    incisos,
+    literales,
+    fragmentSource:
+      incisos.length || literales.length ? "paragraphs" : "none",
+  };
 }
 
 /** Exported for unit testing; also used internally by parseNormaTexto. */
@@ -328,14 +434,24 @@ export function flattenArticles(
       // bis.-" / "Art. 2º."); fall back to the structured <NombreParte>
       // metadata (e.g. "58 bis") for the rare cases where the body text
       // doesn't start with a recognizable "Art[ículo]" prefix at all.
-      const numero =
-        normalizeArticleNumber(part.texto) ??
-        (part.nombreParte
-          ? normalizeFromNombreParte(part.nombreParte)
-          : undefined) ??
-        part.titulo ??
-        "?";
-      const { incisos, literales } = parseIncisosAndLiterales(part.texto);
+      const numeroTexto = normalizeArticleNumber(part.texto);
+      const numeroNombre = part.nombreParte
+        ? normalizeFromNombreParte(part.nombreParte)
+        : undefined;
+      const numeroTitulo = part.titulo
+        ? normalizeFromNombreParte(part.titulo)
+        : undefined;
+      const numero = numeroNombre ?? numeroTexto ?? numeroTitulo ?? "?";
+      const numeroSource: "nombreParte" | "texto" | "titulo" | undefined =
+        numeroNombre
+          ? "nombreParte"
+          : numeroTexto
+            ? "texto"
+            : numeroTitulo
+              ? "titulo"
+              : undefined;
+      const { incisos, literales, fragmentSource } =
+        parseIncisosAndLiterales(part.texto);
       out.push({
         numero,
         idParte: part.idParte,
@@ -343,6 +459,9 @@ export function flattenArticles(
         url: part.idParte
           ? `https://www.bcn.cl/leychile/navegar?idNorma=${idNorma}&idParte=${part.idParte}`
           : `https://www.bcn.cl/leychile/navegar?idNorma=${idNorma}`,
+        derogado: part.derogado,
+        numeroSource,
+        fragmentSource,
         incisos,
         literales,
       });
@@ -362,16 +481,25 @@ export async function fetchNormaXml(
     signal?: AbortSignal;
     timeoutMs?: number;
     retries?: number;
+    idVersion?: string;
   } = {},
 ): Promise<string> {
   const code = idNorma.replace(/\D/g, "");
+  const versionKey = demoModeEnabled()
+    ? "demo"
+    : opts.idVersion?.trim() || "current";
   // Check 429 cool-down inside the loader so fresh/stale cache still wins.
-  return xmlCache.getOrSet(`xml:${code}`, async () => {
+  return xmlCache.getOrSet(`xml:${code}:${versionKey}`, async () => {
+    if (demoModeEnabled()) {
+      return loadDemoFixtureXml(code);
+    }
     const blockedUntil = xml429Until.get(code);
     if (blockedUntil && Date.now() < blockedUntil) {
       throw new LeyChileRateLimitError(code, blockedUntil - Date.now());
     }
-    const xmlUrl = `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
+    const xmlUrl = opts.idVersion?.trim()
+      ? `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}&idVersion=${encodeURIComponent(opts.idVersion.trim())}`
+      : `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`;
     try {
       const xml = await fetchTextWithRetry(
         xmlUrl,
@@ -410,84 +538,96 @@ export async function fetchNormaXml(
   });
 }
 
+function parseNormaXml(code: string, xml: string): NormaTexto {
+  if (!xml.includes("<Norma") && !xml.includes("normaId")) {
+    throw new LeyChileXmlError(code, "la respuesta no contiene un nodo Norma");
+  }
+  const parser = new XMLParser({
+    ignoreAttributes: false,
+    attributeNamePrefix: "@_",
+    textNodeName: "#text",
+    trimValues: false,
+  });
+  const doc = parser.parse(stripNamespaces(xml)) as Record<string, unknown>;
+  const norma = (doc.Norma ?? doc) as Record<string, unknown>;
+  const identificador = (norma.Identificador ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const metadatos = (norma.Metadatos ?? {}) as Record<string, unknown>;
+  const tipoNumero = asArray(
+    ((identificador.TiposNumeros as Record<string, unknown> | undefined)
+      ?.TipoNumero ?? undefined) as
+      | Record<string, unknown>
+      | Record<string, unknown>[]
+      | undefined,
+  )[0] as Record<string, unknown> | undefined;
+  const structures = asArray(norma.EstructurasFuncionales).flatMap((block) => {
+    const b = block as Record<string, unknown>;
+    return asArray(b.EstructuraFuncional).map((child) =>
+      parsePart(child as Record<string, unknown>),
+    );
+  });
+  if (structures.length === 0) {
+    throw new UnsupportedNormaStructureError(
+      code,
+      "el XML no contiene EstructurasFuncionales parseables",
+    );
+  }
+  return {
+    idNorma: code,
+    titulo: decodeEntities(textOf(metadatos.TituloNorma)) || `Norma ${code}`,
+    tipo: decodeEntities(textOf(tipoNumero?.Tipo)),
+    numero: decodeEntities(textOf(tipoNumero?.Numero)),
+    fechaPublicacion: identificador["@_fechaPublicacion"]
+      ? String(identificador["@_fechaPublicacion"])
+      : undefined,
+    fechaVersion: norma["@_fechaVersion"]
+      ? String(norma["@_fechaVersion"])
+      : undefined,
+    derogado: norma["@_derogado"] ? String(norma["@_derogado"]) : undefined,
+    materias: asArray(metadatos.Materias)
+      .flatMap((m) =>
+        asArray((m as Record<string, unknown>).Materia).map((x) =>
+          decodeEntities(textOf(x)),
+        ),
+      )
+      .filter(Boolean),
+    organismos: asArray(identificador.Organismos)
+      .flatMap((o) =>
+        asArray((o as Record<string, unknown>).Organismo).map((x) =>
+          decodeEntities(textOf(x)),
+        ),
+      )
+      .filter(Boolean),
+    url: `https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
+    xmlUrl: `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
+    partes: structures,
+    articulos: flattenArticles(structures, code),
+  };
+}
+
+/** Parse a LeyChile XML string without network (fixtures/VCR). */
+export function parseNormaFromXml(idNorma: string, xml: string): NormaTexto {
+  return parseNormaXml(idNorma.replace(/\D/g, ""), xml);
+}
+
 export async function parseNormaTexto(
   idNorma: string,
   opts: {
     signal?: AbortSignal;
     timeoutMs?: number;
     retries?: number;
+    idVersion?: string;
   } = {},
 ): Promise<NormaTexto> {
   const code = idNorma.replace(/\D/g, "");
-  return xmlCache.getOrSet(`parsed:${code}`, async () => {
+  const versionKey = demoModeEnabled()
+    ? "demo"
+    : opts.idVersion?.trim() || "current";
+  return xmlCache.getOrSet(`parsed:${code}:${versionKey}`, async () => {
     const xml = await fetchNormaXml(code, opts);
-    const parser = new XMLParser({
-      ignoreAttributes: false,
-      attributeNamePrefix: "@_",
-      textNodeName: "#text",
-      trimValues: false,
-    });
-    const doc = parser.parse(stripNamespaces(xml)) as Record<string, unknown>;
-    const norma = (doc.Norma ?? doc) as Record<string, unknown>;
-    const identificador = (norma.Identificador ?? {}) as Record<
-      string,
-      unknown
-    >;
-    const metadatos = (norma.Metadatos ?? {}) as Record<string, unknown>;
-    const tipoNumero = asArray(
-      ((identificador.TiposNumeros as Record<string, unknown> | undefined)
-        ?.TipoNumero ?? undefined) as
-        Record<string, unknown> | Record<string, unknown>[] | undefined,
-    )[0] as Record<string, unknown> | undefined;
-
-    const structures = asArray(norma.EstructurasFuncionales).flatMap(
-      (block) => {
-        const b = block as Record<string, unknown>;
-        return asArray(b.EstructuraFuncional).map((child) =>
-          parsePart(child as Record<string, unknown>),
-        );
-      },
-    );
-
-    const articulos = flattenArticles(structures, code);
-    if (structures.length === 0) {
-      throw new UnsupportedNormaStructureError(
-        code,
-        "el XML no contiene EstructurasFuncionales parseables",
-      );
-    }
-
-    return {
-      idNorma: code,
-      titulo: decodeEntities(textOf(metadatos.TituloNorma)) || `Norma ${code}`,
-      tipo: decodeEntities(textOf(tipoNumero?.Tipo)),
-      numero: decodeEntities(textOf(tipoNumero?.Numero)),
-      fechaPublicacion: identificador["@_fechaPublicacion"]
-        ? String(identificador["@_fechaPublicacion"])
-        : undefined,
-      fechaVersion: norma["@_fechaVersion"]
-        ? String(norma["@_fechaVersion"])
-        : undefined,
-      derogado: norma["@_derogado"] ? String(norma["@_derogado"]) : undefined,
-      materias: asArray(metadatos.Materias)
-        .flatMap((m) =>
-          asArray((m as Record<string, unknown>).Materia).map((x) =>
-            decodeEntities(textOf(x)),
-          ),
-        )
-        .filter(Boolean),
-      organismos: asArray(identificador.Organismos)
-        .flatMap((o) =>
-          asArray((o as Record<string, unknown>).Organismo).map((x) =>
-            decodeEntities(textOf(x)),
-          ),
-        )
-        .filter(Boolean),
-      url: `https://www.bcn.cl/leychile/navegar?idNorma=${code}`,
-      xmlUrl: `https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=${code}`,
-      partes: structures,
-      articulos,
-    };
+    return parseNormaXml(code, xml);
   });
 }
 

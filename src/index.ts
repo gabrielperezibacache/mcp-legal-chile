@@ -5,12 +5,11 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { authorizeRequest, authEnabled, quotaSnapshot } from "./auth.js";
-import { HOT_IDS_FOR_WARMUP } from "./catalog.js";
 import { logger, newRequestId } from "./logger.js";
 import { metrics } from "./metrics.js";
 import { createServer, VERSION } from "./server.js";
-import { parseNormaTexto } from "./sources/normaTexto.js";
 import { isUpstreamCoolingDown, upstreamStatus } from "./upstream.js";
+import { runWarmup } from "./warmup.js";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 
@@ -116,25 +115,19 @@ app.get("/warmup", async (_req, res) => {
     });
     return;
   }
-  const ids = HOT_IDS_FOR_WARMUP.slice(0, 3);
-  const results: Array<{ id: string; ok: boolean; error?: string }> = [];
-  for (const id of ids) {
-    if (isUpstreamCoolingDown("leychile")) {
-      results.push({ id, ok: false, error: "leychile_cooling_down" });
-      break;
-    }
-    try {
-      await parseNormaTexto(id);
-      results.push({ id, ok: true });
-    } catch (error) {
-      results.push({
-        id,
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-  res.json({ ok: true, warmed: results });
+  const report = await runWarmup({
+    kind: "cron",
+    onProgress: (result) => {
+      if (!result.ok) {
+        logger.warn("warmup_fail", {
+          kind: "cron",
+          id: result.id,
+          error: result.error,
+        });
+      }
+    },
+  });
+  res.json(report);
 });
 
 app.get("/.well-known/mcp.json", (_req, res) => {
@@ -290,26 +283,24 @@ async function warmupHotNormas(): Promise<void> {
     logger.info("warmup_skipped", { reason: "leychile_cooling_down" });
     return;
   }
-  const ids = HOT_IDS_FOR_WARMUP.slice(0, 4);
-  logger.info("warmup_start", { ids });
-  for (const id of ids) {
-    if (isUpstreamCoolingDown("leychile")) {
-      logger.info("warmup_aborted", {
-        reason: "leychile_cooling_down",
-        remaining: ids.slice(ids.indexOf(id)),
-      });
-      break;
-    }
-    try {
-      await parseNormaTexto(id);
-      logger.info("warmup_ok", { id });
-    } catch (error) {
-      logger.warn("warmup_fail", {
-        id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
+  const report = await runWarmup({
+    kind: "boot",
+    onProgress: (result) => {
+      if (result.ok) logger.info("warmup_ok", { kind: "boot", id: result.id });
+      else
+        logger.warn("warmup_fail", {
+          kind: "boot",
+          id: result.id,
+          error: result.error,
+        });
+    },
+  });
+  logger.info("warmup_complete", {
+    kind: "boot",
+    offset: report.offset,
+    nextOffset: report.nextOffset,
+    warmed: report.warmed.length,
+  });
 }
 
 const httpServer = app.listen(PORT, HOST, (error?: Error) => {

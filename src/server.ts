@@ -33,7 +33,7 @@ export function createServer(): McpServer {
   registerWorkflowTools(server);
   registerMetaTools(server, VERSION);
   registerPrompts(server);
-  registerStudyResources(server);
+  registerStudyResources(server, VERSION);
 
   return server;
 }

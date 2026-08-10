@@ -7,6 +7,7 @@ import {
   rankConsiderandos,
   type Considerando,
 } from "./considerandos.js";
+import { getCachedFallo } from "./falloImport.js";
 import {
   excerptForQuote,
   getTcFicha,
@@ -507,6 +508,38 @@ export async function citarJurisprudencia(opts: {
       sourceMode: "texto_pegado",
       extraWarnings: [
         "PJUD no ofrece API abierta de texto. Esta cita usa el texto que pegaste; contrástalo con la fuente oficial.",
+      ],
+    });
+  }
+
+  const cached = getCachedFallo(opts.rol);
+  if (cached?.texto) {
+    const norm = normalizeRol(opts.rol);
+    const tribunal =
+      opts.tribunal?.trim() ||
+      cached.tribunal ||
+      "Tribunal (texto importado)";
+    const tipoResolucion =
+      opts.tipoResolucion?.trim() || cached.tipoResolucion || "Sentencia";
+    const anio =
+      opts.anio?.trim() ||
+      cached.anio ||
+      yearFromFechaOrRol(undefined, cached.rol);
+    return quoteFromContent({
+      content: cached.texto,
+      tribunal,
+      tipoResolucion,
+      rolDisplay: cached.rol || norm.display,
+      anio,
+      url: opts.url?.trim() || cached.url,
+      considerando: opts.considerando,
+      consulta: opts.consulta,
+      maxChars,
+      evidenceLabel:
+        "texto íntegro desde cache de importar_fallo (verificar contra PDF/portal oficial)",
+      sourceMode: "texto_pegado",
+      extraWarnings: [
+        "Cita desde fallo previamente importado (`importar_fallo`). Contrasta con la fuente oficial.",
       ],
     });
   }
