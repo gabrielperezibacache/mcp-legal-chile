@@ -6,6 +6,14 @@ Versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.23.1] — 2026-08-10
+
+### Fixed
+- Ranking legislación: filtro por cobertura de términos tras SPARQL OR (menos ruido tipo “mamografías” en consultas de responsabilidad médica)
+- Ranking jurisprudencia: penaliza TC off-topic con baja cobertura; bonus de bigramas; reduce flat bonus `tc_buscador`
+- LeyChile tools (`obtener_articulo` / texto / inciso): timeout 12s y 1 reintento (falla antes del tope del cliente)
+- Doctrina: `fixMojibake` + `normalizeScrapedText` en títulos/abstracts
+
 ## [1.23.0] — 2026-08-10
 
 ### Fixed
