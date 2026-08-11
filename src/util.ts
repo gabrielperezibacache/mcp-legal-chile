@@ -287,6 +287,7 @@ const NAMED_ENTITIES: Record<string, string> = {
   copy: "©",
   reg: "®",
   trade: "™",
+  apos: "'",
 };
 
 export function decodeHtmlEntities(text: string): string {
@@ -295,6 +296,7 @@ export function decodeHtmlEntities(text: string): string {
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
     .replace(/&#39;/g, "'")
     .replace(/&#x27;/g, "'")
     .replace(/&#x([0-9a-fA-F]+);/g, (_, n: string) =>
@@ -318,6 +320,8 @@ export function fixMojibake(text: string): string {
     .replace(/Ã­/g, "í")
     .replace(/Ã³/g, "ó")
     .replace(/Ãº/g, "ú")
+    .replace(/Ã¼/g, "ü")
+    .replace(/Ã§/g, "ç")
     .replace(/Ã±/g, "ñ")
     .replace(/Ã/g, "Á")
     .replace(/Ã‰/g, "É")
@@ -327,6 +331,10 @@ export function fixMojibake(text: string): string {
     .replace(/Ã‘/g, "Ñ")
     .replace(/Â¿/g, "¿")
     .replace(/Â¡/g, "¡")
+    .replace(/Âº/g, "º")
+    .replace(/Âª/g, "ª")
+    .replace(/Â /g, " ")
+    .replace(/Â/g, "")
     .replace(/â€œ/g, "“")
     .replace(/â€/g, "”")
     .replace(/â€˜/g, "‘")
@@ -342,9 +350,7 @@ export function normalizeScrapedText(text: string): string {
 }
 
 export function stripHtml(html: string): string {
-  return decodeHtmlEntities(html.replace(/<[^>]+>/g, " "))
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizeScrapedText(html.replace(/<[^>]+>/g, " "));
 }
 
 export function urlDedupeKey(url: string): string {

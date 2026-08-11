@@ -5,6 +5,7 @@ import {
   tryExtractAgencyBody,
   withAgencyExcerpt,
 } from "./agencyWeb.js";
+import { DT_HOSTS } from "./hostAllowlist.js";
 
 /** Ord. / dictamen DT numbers: "Ord. N° 1234/2020", "dictamen 2345". */
 export function extractDtNumber(query: string): string | undefined {
@@ -60,6 +61,7 @@ export async function searchDictamenesDt(
       anchors: /\b(?:dictamen|ordenanza|ord\.|dirección del trabajo)\b/i,
       timeoutMs: Number(process.env.DT_FETCH_TIMEOUT_MS ?? 10_000),
       signal: opts.signal,
+      allowedHosts: DT_HOSTS,
     });
     if (extracted.warning) warnings.push(extracted.warning);
     if (extracted.excerpt) {

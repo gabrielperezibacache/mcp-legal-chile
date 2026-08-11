@@ -149,7 +149,7 @@ export function formatChileanCitation(input: ChileanCitationInput): {
   const numeroRaw = input.numero?.trim();
   const numeroIsNumeric = Boolean(numeroRaw && /^\d/.test(numeroRaw));
 
-  if (titulo && /c[oó]digo\s+(civil|penal|del\s+trabajo|de\s+comercio)/i.test(titulo)) {
+  if (titulo && /c[oó]digo\s+(civil|penal|del\s+trabajo|de\s+comercio|procesal\s+penal|de\s+procedimiento\s+civil|org[aá]nico\s+de\s+tribunales|tributario|de\s+aguas)/i.test(titulo)) {
     parts.push(titulo.match(/c[oó]digo\s+[^\d,(]+/i)?.[0]?.trim() ?? titulo);
   } else if (numeroRaw && !numeroIsNumeric) {
     // tipo="Código" + numero="PENAL" → "Código Penal" (never "Código N° PENAL")
@@ -229,10 +229,29 @@ export function formatCitation(
     } else {
       citation = `${input.tribunal ?? "Tribunal"} (Chile). (${input.anio ?? "s.f."}). ${input.tipo ?? "Sentencia"} rol ${input.rol}${input.considerando ? `. Considerando ${consideringText(input.considerando)}` : ""}.`;
     }
-  } else if (estilo === "bluebook") {
-    citation = `${input.tipo?.trim() || "Ley"}${input.numero ? ` No. ${input.numero}` : input.titulo ? ` "${input.titulo}"` : ""}${input.articulo ? `, art. ${input.articulo}` : ""}${input.inciso ? `, inc. ${input.inciso}` : ""}${input.letra ? `, lit. ${input.letra})` : ""} [Chile]`;
   } else {
-    citation = `${input.tipo?.trim() || "Norma"}${input.numero ? ` N° ${input.numero}` : input.titulo && !input.numero ? `. ${input.titulo}` : ""}${input.anio ? ` (${input.anio})` : ""}${input.articulo ? `. Artículo ${input.articulo}` : ""}${input.inciso ? `, inciso ${input.inciso}` : ""}${input.letra ? `, literal ${input.letra})` : ""} [Chile].`;
+    const tipoRaw = input.tipo?.trim() || "Ley";
+    const numeroRaw = input.numero?.trim();
+    const titulo = input.titulo?.trim();
+    const numeroIsNumeric = Boolean(numeroRaw && /^\d/.test(numeroRaw));
+    const isCodigo =
+      /c[oó]digo/i.test(tipoRaw) ||
+      (titulo && /c[oó]digo/i.test(titulo));
+    let normaCore: string;
+    if (isCodigo && numeroRaw && !numeroIsNumeric) {
+      normaCore = `Código ${numeroRaw}`;
+    } else if (titulo && /c[oó]digo/i.test(titulo) && !numeroIsNumeric) {
+      normaCore = titulo.match(/c[oó]digo\s+[^\d,(]+/i)?.[0]?.trim() ?? titulo;
+    } else if (estilo === "bluebook") {
+      normaCore = `${tipoRaw}${numeroRaw ? ` No. ${numeroRaw}` : titulo ? ` "${titulo}"` : ""}`;
+    } else {
+      normaCore = `${tipoRaw}${numeroRaw ? ` N° ${numeroRaw}` : titulo && !numeroRaw ? `. ${titulo}` : ""}`;
+    }
+    if (estilo === "bluebook") {
+      citation = `${normaCore}${input.articulo ? `, art. ${input.articulo}` : ""}${input.inciso ? `, inc. ${input.inciso}` : ""}${input.letra ? `, lit. ${input.letra})` : ""} [Chile]`;
+    } else {
+      citation = `${normaCore}${input.anio ? ` (${input.anio})` : ""}${input.articulo ? `. Artículo ${input.articulo}` : ""}${input.inciso ? `, inciso ${input.inciso}` : ""}${input.letra ? `, literal ${input.letra})` : ""} [Chile].`;
+    }
   }
 
   return { citation, url: input.url, notes, estilo };

@@ -112,6 +112,23 @@ test("citas de códigos no usan N° PENAL", () => {
   });
   assert.match(civil.citation, /Código Civil/i);
   assert.match(civil.citation, /1437/);
+
+  const cpp = formatChileanCitation({
+    titulo: "Código Procesal Penal",
+    articulo: "97",
+  });
+  assert.match(cpp.citation, /Código Procesal Penal/i);
+  assert.doesNotMatch(cpp.citation, /N°\s*Procesal/i);
+});
+
+test("formatCitation bluebook/iso no usa No. PENAL para códigos", async () => {
+  const { formatCitation } = await import("../dist/citation.js");
+  const bb = formatCitation(
+    { tipo: "Código", numero: "PENAL", articulo: "454" },
+    "bluebook",
+  );
+  assert.match(bb.citation, /Código Penal/i);
+  assert.doesNotMatch(bb.citation, /No\.\s*PENAL/i);
 });
 
 test("legalExtractionFailure distingue HTTP 401", () => {
@@ -123,4 +140,22 @@ test("legalExtractionFailure distingue HTTP 401", () => {
   assert.match(text, /401/);
   assert.match(text, /CloudFront|no autorizado|WAF/i);
   assert.equal(out.isError, undefined);
+});
+
+test("softAgencyFailure no marca isError en 429", async () => {
+  const { softAgencyFailure } = await import("../dist/tools/helpers.js");
+  const { CircuitOpenError } = await import("../dist/upstream.js");
+  const limited = softAgencyFailure(
+    new HttpStatusError(429, "https://www.contraloria.cl/x"),
+    "Error dictámenes",
+  );
+  assert.equal(limited.isError, undefined);
+  assert.match(limited.content?.[0]?.text ?? "", /429/);
+
+  const circuit = softAgencyFailure(
+    new CircuitOpenError("contraloria", 5000),
+    "Error dictámenes",
+  );
+  assert.equal(circuit.isError, undefined);
+  assert.match(circuit.content?.[0]?.text ?? "", /circuito/i);
 });

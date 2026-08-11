@@ -263,6 +263,59 @@ export function legalExtractionFailure(error: unknown, idNorma: string) {
   return fail(formatLegalExtractionError(error, idNorma));
 }
 
+/**
+ * Soft-degrade circuit/429/401/403/network for agency tools (CGR/DT/SERNAC/CMF)
+ * so MCP clients do not treat upstream limits as "server unreachable".
+ */
+export function softAgencyFailure(error: unknown, label: string) {
+  if (error instanceof CircuitOpenError) {
+    const sec = Math.max(1, Math.ceil(error.retryAfterMs / 1000));
+    return okText(
+      [
+        `${label}: circuito ${error.host} temporalmente abierto.`,
+        `Reintenta en ~${sec}s. No inventes dictámenes ni extractos.`,
+        `Detalle: ${error.message}`,
+      ].join("\n"),
+    );
+  }
+  if (error instanceof LeyChileRateLimitError) {
+    const sec = Math.max(1, Math.ceil(error.retryAfterMs / 1000));
+    return okText(
+      [
+        `${label}: rate limit (HTTP 429).`,
+        `Reintenta en ~${sec}s. No inventes contenido oficial.`,
+        `Detalle: ${error.message}`,
+      ].join("\n"),
+    );
+  }
+  if (error instanceof HttpStatusError) {
+    const status = error.status;
+    if (status === 401 || status === 403 || status === 404 || status === 429) {
+      return okText(
+        [
+          `${label}: HTTP ${status}.`,
+          "Fuente oficial no disponible automáticamente; abre el portal y no inventes el texto.",
+          `Detalle: ${error.message}`,
+        ].join("\n"),
+      );
+    }
+  }
+  const msg = error instanceof Error ? error.message : String(error);
+  if (
+    /HTTP\s*(401|403|404|429)|Circuito abierto|fetch failed|ECONN|ENOTFOUND|ETIMEDOUT|socket|network|aborted|Timeout|HTTP 5\d\d|UND_ERR/i.test(
+      msg,
+    )
+  ) {
+    return okText(
+      [
+        `${label}: fuente temporalmente limitada (${msg.slice(0, 160)}).`,
+        "No inventes dictámenes ni extractos. Reintenta o abre el portal oficial.",
+      ].join("\n"),
+    );
+  }
+  return fail(`${label}: ${msg}`);
+}
+
 export async function timed<T>(name: string, fn: () => Promise<T>): Promise<T> {
   metrics.markToolCall();
   return metrics.time("tool", () => metrics.time(name, fn));

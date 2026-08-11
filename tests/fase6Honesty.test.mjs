@@ -43,7 +43,7 @@ test("sealSearchResponse no deja verified sin texto", () => {
         source: "dictamenes",
         title: "Fake verified",
         citation: "x",
-        url: "https://example.test/d",
+        url: "https://www.contraloria.cl/web/cgr/dictamenes?id=empty",
         evidence: "full_text",
         summary: "   ",
         metadata: { integrity: "verified" },
@@ -74,4 +74,6 @@ test("sealSearchResponse no deja verified sin texto", () => {
   assert.equal(integrityOf(sealed.results[1]), "verified");
   assert.equal(integrityOf(sealed.results[2]), "candidate");
   assert.match(sealed.warnings?.join(" ") ?? "", /degradados/i);
+  assert.match(sealed.warnings?.join(" ") ?? "", /host no oficial|procedencia/i);
+  assert.match(sealed.warnings?.join(" ") ?? "", /sin texto recuperado/i);
 });

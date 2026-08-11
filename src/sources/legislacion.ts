@@ -197,7 +197,7 @@ export function rankLegislacionResults(
 ): CitationResult[] {
   if (!terms.length) return results;
   const minCoverage =
-    terms.length >= 3 ? 2 / terms.length : terms.length >= 2 ? 0.5 : 0;
+    terms.length >= 3 ? 2 / terms.length : terms.length >= 2 ? 1 : 0;
   const scored = results
     .map((hit) => ({ hit, score: scoreLegislacionHit(hit, terms) }))
     .filter(({ score }) => score + 1e-9 >= minCoverage)
@@ -459,10 +459,16 @@ export async function searchLegislacion(
         opts.signal,
         "none",
       );
-      results = bindingsToResults(data.results.bindings, limit);
+      results = bindingsToResults(data.results.bindings, Math.max(limit * 2, 12));
+      const before = results.length;
+      results = rankLegislacionResults(results, terms).slice(0, limit);
       if (results.length) {
         warnings.push(
-          `Resultados filtrados por el término «${longest}»; verifica relevancia.`,
+          `Resultados filtrados por el término «${longest}» y cobertura de la consulta; verifica relevancia.`,
+        );
+      } else if (before > 0) {
+        warnings.push(
+          `SPARQL por «${longest}» devolvió ${before} hit(s) sin cobertura suficiente de la consulta.`,
         );
       }
     } catch (error) {
@@ -476,10 +482,11 @@ export async function searchLegislacion(
   // 4) LeyChile HTML buscador (free public search)
   if (!results.length) {
     try {
-      results = await searchLeyChileBuscador(query, limit, opts.signal, "none");
+      const raw = await searchLeyChileBuscador(query, Math.max(limit * 2, 12), opts.signal, "none");
+      results = rankLegislacionResults(raw, terms).slice(0, limit);
       if (results.length) {
         warnings.push(
-          "Resultados desde el buscador web de LeyChile (metadata); confirma en la URL oficial.",
+          "Resultados desde el buscador web de LeyChile (metadata), filtrados por cobertura; confirma en la URL oficial.",
         );
       }
     } catch (error) {

@@ -15,6 +15,7 @@ import {
   tribunalSearchSites,
 } from "./tribunalesCatalog.js";
 import { parseConsiderandos, rankConsiderandos } from "./considerandos.js";
+import { isAllowedHost } from "./hostAllowlist.js";
 import { containsWholeAlias } from "../textMatch.js";
 import {
   excerptForQuote,
@@ -36,12 +37,20 @@ const PJUD_NO_API_HINT =
   "PJUD no tiene API abierta; se entregan solo enlaces candidatos para verificación manual.";
 
 function friendlyWebSearchWarning(raw: string, site?: string): string {
+  const statusHint = /HTTP\s*429/i.test(raw)
+    ? "HTTP 429"
+    : /Circuito abierto/i.test(raw)
+      ? "circuito abierto"
+      : /HTTP\s*401|HTTP\s*403/i.test(raw)
+        ? raw.match(/HTTP\s*\d{3}/i)?.[0]
+        : undefined;
   if (
-    /Circuito abierto|HTTP 429|fetch failed|aborted|timeout|ECONN|ENOTFOUND/i.test(
+    /Circuito abierto|HTTP 429|HTTP 401|HTTP 403|fetch failed|aborted|timeout|ECONN|ENOTFOUND/i.test(
       raw,
     )
   ) {
-    return site ? `${WEB_LIMITED_HINT} (${site})` : WEB_LIMITED_HINT;
+    const base = site ? `${WEB_LIMITED_HINT} (${site})` : WEB_LIMITED_HINT;
+    return statusHint ? `${base} [${statusHint}]` : base;
   }
   return site ? `Búsqueda libre en ${site} limitada: ${raw}` : raw;
 }
@@ -83,13 +92,13 @@ const QUERY_STOPWORDS = new Set([
   "jurisprudencia",
 ]);
 
-const OFFICIAL_HOST_FRAGMENTS = [
+const OFFICIAL_HOST_DOMAINS = [
   "pjud.cl",
   "tribunalconstitucional.cl",
   "buscador.tcchile.cl",
   "tcchile.cl",
   ...TRIBUNAL_PORTALS.flatMap((p) => p.sites),
-];
+] as const;
 
 export interface ResolveRolResult {
   rol: string;
@@ -122,15 +131,12 @@ export interface TcFalloPack {
 }
 
 function isOfficialHost(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    return OFFICIAL_HOST_FRAGMENTS.some(
-      (frag) =>
-        host === frag || host.endsWith(`.${frag}`) || host.includes(frag),
-    );
-  } catch {
-    return OFFICIAL_HOST_FRAGMENTS.some((frag) => url.includes(frag));
-  }
+  return isAllowedHost(url, OFFICIAL_HOST_DOMAINS);
+}
+
+/** Export for provenance tests (exact / subdomain only — no substring). */
+export function isOfficialJurisHost(url: string): boolean {
+  return isOfficialHost(url);
 }
 
 /** Score > 0 means the hit looks like a court ruling / causa page. */
@@ -183,20 +189,30 @@ function queryTokens(query: string): string[] {
     .filter((t) => t.length > 1 && !QUERY_STOPWORDS.has(t));
 }
 
-function yearVariants(anio?: string): string[] {
-  if (!anio) return [];
-  const y = anio.trim();
-  if (!y) return [];
-  const out = [y];
-  if (/^(19|20)\d{2}$/.test(y)) out.push(y.slice(-2));
-  return out;
-}
-
 function matchesYearFilter(hit: CitationResult, anio?: string): boolean {
   if (!anio) return true;
-  const variants = yearVariants(anio);
-  const hay = `${hit.title} ${hit.summary ?? ""} ${hit.rol ?? ""} ${hit.date ?? ""} ${hit.metadata?.anio ?? ""}`;
-  return variants.some((v) => hay.includes(v));
+  const y = anio.trim();
+  if (!/^(19|20)\d{2}$/.test(y)) return true;
+  const short = y.slice(-2);
+  // Prefer structured sentencia year; never treat short year as free substring
+  // in titles/summaries (avoids "art. 20" / "página 20" false positives).
+  const structured = [
+    hit.date,
+    hit.metadata?.anioSentencia,
+    hit.metadata?.anio,
+  ]
+    .filter((v): v is string => typeof v === "string" && v.length > 0)
+    .join(" ");
+  if (structured.includes(y)) return true;
+  const rol = hit.rol ?? "";
+  if (
+    rol.includes(y) ||
+    rol.includes(`-${short}`) ||
+    new RegExp(`-${short}(?:-|$)`).test(rol)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 /** Relevance rank for mixed TC + web jurisprudence results. */
@@ -218,6 +234,8 @@ export function scoreJurisprudenciaHit(
     }
   }
   const coverage = tokens.length ? matched / tokens.length : 1;
+  // Gate evidence/host bonuses: off-topic full_text TC must not drown relevant link_only.
+  const relevanceGate = tokens.length === 0 ? 1 : coverage;
 
   // Adjacent bigrams (e.g. "prision preventiva", "peligro fuga")
   for (let i = 0; i + 1 < tokens.length; i++) {
@@ -228,20 +246,21 @@ export function scoreJurisprudenciaHit(
     }
   }
 
-  if (hit.evidence === "full_text") score += 35;
-  else if (hit.evidence === "metadata") score += 25;
+  if (hit.evidence === "full_text") score += Math.round(35 * relevanceGate);
+  else if (hit.evidence === "metadata") score += Math.round(25 * relevanceGate);
   else score += 5;
 
   // TC is a strong source, but not when the hit barely matches the query.
   if (hit.metadata?.provider === "tc_buscador") {
-    score += coverage >= 0.5 ? 12 : 4;
+    score += coverage >= 0.5 ? 12 : tokens.length >= 2 ? 0 : 2;
   }
-  if (isOfficialHost(hit.url)) score += 15;
-  if (hit.rol) score += 10;
+  if (isOfficialHost(hit.url)) score += Math.round(15 * Math.max(relevanceGate, 0.2));
+  if (hit.rol) score += Math.round(10 * Math.max(relevanceGate, 0.3));
   if (hit.secondaryUrl) score += 5;
 
-  if (tokens.length >= 3 && coverage < 0.5) score -= 35;
-  else if (tokens.length >= 2 && coverage < 0.5) score -= 22;
+  if (tokens.length >= 1 && matched === 0) score -= 45;
+  else if (tokens.length >= 3 && coverage < 0.5) score -= 35;
+  else if (tokens.length >= 2 && coverage < 0.5) score -= 28;
   else if (tokens.length >= 4 && matched < 2) score -= 40;
 
   if (opts.tribunal) {
@@ -315,10 +334,18 @@ function enrich(hits: CitationResult[]): CitationResult[] {
     const ids = parseCaseIdentifiers(hit.title, hit.summary ?? "");
     const rol = hit.rol ?? ids.rol;
     const tribunal = hit.tribunal ?? ids.tribunal;
-    const anio =
-      (hit.metadata?.anio as string | undefined) ??
-      ids.anio ??
+    const anioRol =
+      (hit.metadata?.anioRol as string | undefined) ??
       (rol ? anioFromRol(rol) : undefined);
+    // Sentencia year ≠ ROL ingreso year. Never promote anioFromRol to `anio`.
+    const anioSentencia =
+      (hit.metadata?.anioSentencia as string | undefined) ??
+      (hit.date?.match(/(19|20)\d{2}/)?.[0] as string | undefined) ??
+      (typeof hit.metadata?.anio === "string" &&
+      hit.metadata.anio !== anioRol
+        ? hit.metadata.anio
+        : undefined);
+    const anio = anioSentencia;
     const tipo =
       (hit.metadata?.tipo as string | undefined) ??
       ids.tipo ??
@@ -336,6 +363,14 @@ function enrich(hits: CitationResult[]): CitationResult[] {
             url: hit.url,
             titleFallback: hit.title,
           });
+    const nextMeta: NonNullable<CitationResult["metadata"]> = {
+      ...(hit.metadata ?? {}),
+      tipo,
+    };
+    if (anio) nextMeta.anio = anio;
+    else delete nextMeta.anio;
+    if (anioRol) nextMeta.anioRol = anioRol;
+    if (anioSentencia) nextMeta.anioSentencia = anioSentencia;
     return {
       ...hit,
       evidence: hit.evidence ?? ("link_only" as const),
@@ -344,11 +379,7 @@ function enrich(hits: CitationResult[]): CitationResult[] {
       ruc: hit.ruc ?? ids.ruc,
       tribunal,
       citation,
-      metadata: {
-        ...hit.metadata,
-        anio,
-        tipo,
-      },
+      metadata: nextMeta,
     };
   });
 }

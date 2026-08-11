@@ -113,6 +113,43 @@ test("scoreJurisprudenciaHit penaliza TC off-topic con baja cobertura", () => {
   );
 });
 
+test("scoreJurisprudenciaHit no premia TC full_text sin tokens de consulta", () => {
+  const query = "fuga";
+  const offTopicTc = {
+    source: "jurisprudencia",
+    title: "TC rol 999 — Inaplicabilidad tributaria",
+    citation: "Tribunal Constitucional, rol 999",
+    summary: "impuesto a la renta y base imponible",
+    url: "https://buscador.tcchile.cl/#/ficha/999",
+    tribunal: "Tribunal Constitucional",
+    rol: "999-2020",
+    evidence: "full_text",
+    metadata: { provider: "tc_buscador" },
+  };
+  const onTopic = {
+    source: "jurisprudencia",
+    title: "Peligro de fuga en prisión preventiva",
+    citation: "CA, fuga",
+    summary: "el tribunal confirma peligro de fuga",
+    url: "https://www.pjud.cl/portal/getRuling?id=2",
+    evidence: "link_only",
+  };
+  assert.ok(
+    scoreJurisprudenciaHit(onTopic, query) >
+      scoreJurisprudenciaHit(offTopicTc, query),
+  );
+});
+
+test("isOfficialJurisHost rechaza lookalikes por substring", async () => {
+  const { isOfficialJurisHost } = await import(
+    "../dist/sources/jurisprudencia.js"
+  );
+  assert.equal(isOfficialJurisHost("https://www.pjud.cl/x"), true);
+  assert.equal(isOfficialJurisHost("https://buscador.tcchile.cl/#/ficha/1"), true);
+  assert.equal(isOfficialJurisHost("https://www.notpjud.cl/x"), false);
+  assert.equal(isOfficialJurisHost("https://pjud.cl.evil.tld/x"), false);
+});
+
 test("scoreJurisprudenciaHit no da bonus de tribunal por substring parcial", () => {
   const hit = {
     source: "jurisprudencia",

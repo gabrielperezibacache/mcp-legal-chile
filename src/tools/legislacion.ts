@@ -35,10 +35,11 @@ import {
   READ_ONLY_ANNOTATIONS,
   okSearch,
   okText,
+  softAgencyFailure,
   timedSearch,
 } from "./helpers.js";
 
-/** Soft-degrade open circuits for BCN metadata tools (no Hermes global cooldown). */
+/** Soft-degrade open circuits / rate limits for BCN metadata tools (no Hermes global cooldown). */
 function softBcnFailure(error: unknown, label: string) {
   if (error instanceof CircuitOpenError) {
     const sec = Math.max(1, Math.ceil(error.retryAfterMs / 1000));
@@ -50,9 +51,7 @@ function softBcnFailure(error: unknown, label: string) {
       ].join("\n"),
     );
   }
-  return fail(
-    `${label}: ${error instanceof Error ? error.message : String(error)}`,
-  );
+  return softAgencyFailure(error, label);
 }
 
 export function registerLegislacionTools(server: McpServer): void {

@@ -15,13 +15,13 @@ import {
 import { citarDictamenPegado } from "../sources/dictamenQuote.js";
 import { formatResultsJson } from "../util.js";
 import {
-  fail,
   formatoSchema,
   limitSchema,
   okSearch,
   okText,
   READ_ONLY_ANNOTATIONS,
   reportToolProgress,
+  softAgencyFailure,
   timed,
   timedSearch,
 } from "./helpers.js";
@@ -47,9 +47,7 @@ export function registerDictamenesTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error dictámenes: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error dictámenes");
       }
     },
   );
@@ -76,9 +74,7 @@ export function registerDictamenesTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error dictámenes DT: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error dictámenes DT");
       }
     },
   );
@@ -104,9 +100,7 @@ export function registerDictamenesTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error resolver_dictamen_dt: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error resolver_dictamen_dt");
       }
     },
   );
@@ -132,9 +126,7 @@ export function registerDictamenesTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error administrativo: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error administrativo");
       }
     },
   );
@@ -159,9 +151,7 @@ export function registerDictamenesTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error resolver_dictamen: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error resolver_dictamen");
       }
     },
   );
@@ -188,9 +178,7 @@ export function registerDictamenesTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error buscar_circulares_sernac: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error buscar_circulares_sernac");
       }
     },
   );
@@ -217,9 +205,7 @@ export function registerDictamenesTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error buscar_circulares_cmf: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error buscar_circulares_cmf");
       }
     },
   );
@@ -247,9 +233,7 @@ export function registerDictamenesTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error buscar_regulatorio: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error buscar_regulatorio");
       }
     },
   );
@@ -287,9 +271,7 @@ export function registerDictamenesTools(server: McpServer): void {
         if (formato === "json") return okText(formatResultsJson(quote));
         return okText(quote.markdown);
       } catch (error) {
-        return fail(
-          `Error citar_dictamen_pegado: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error citar_dictamen_pegado");
       }
     },
   );
@@ -315,9 +297,7 @@ export function registerDictamenesTools(server: McpServer): void {
           formato,
         );
       } catch (error) {
-        return fail(
-          `Error unificada: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error unificada");
       }
     },
   );
@@ -360,9 +340,7 @@ export function registerDictamenesTools(server: McpServer): void {
         );
         return okText(text);
       } catch (error) {
-        return fail(
-          `Error investigar_tema: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        return softAgencyFailure(error, "Error investigar_tema");
       }
     },
   );

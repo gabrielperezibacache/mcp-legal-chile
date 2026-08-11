@@ -42,8 +42,15 @@ test("stripHtml quita etiquetas y decodifica entidades combinadas", () => {
 test("fixMojibake y normalizeScrapedText reparan UTF-8 mal leído", () => {
   assert.equal(fixMojibake("prisiÃ³n preventiva"), "prisión preventiva");
   assert.equal(fixMojibake("aÃ±o"), "año");
+  assert.equal(fixMojibake("MÃ¼ller"), "Müller");
+  assert.equal(fixMojibake("Ã§"), "ç");
   assert.equal(
     normalizeScrapedText("hipot&#233;ticos &#8220;casos&#8221;"),
     "hipotéticos “casos”",
+  );
+  assert.equal(normalizeScrapedText("el &apos;fallo&apos;"), "el 'fallo'");
+  assert.equal(
+    stripHtml("<p>prisiÃ³n &amp; fuga</p>"),
+    "prisión & fuga",
   );
 });

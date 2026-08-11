@@ -150,9 +150,20 @@ export function sealSearchResponse(
     "Integridad: no inventes fuentes. Solo cita lo listado con su URL y nivel de evidencia.",
   );
   if (demotedCount > 0) {
-    warnings.push(
-      `${demotedCount} resultado(s) degradados de verified→candidate (sin texto recuperado).`,
-    );
+    const hostDemotions = sealedResults.filter(
+      (r) => r.metadata?.demotionReason === "verified_non_official_host",
+    ).length;
+    const textDemotions = demotedCount - hostDemotions;
+    if (hostDemotions > 0) {
+      warnings.push(
+        `${hostDemotions} resultado(s) degradados de verified→candidate (host no oficial / procedencia).`,
+      );
+    }
+    if (textDemotions > 0) {
+      warnings.push(
+        `${textDemotions} resultado(s) degradados de verified→candidate (sin texto recuperado).`,
+      );
+    }
   }
   if (realCount === 0 && stubCount > 0) {
     warnings.push(

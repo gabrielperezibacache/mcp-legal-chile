@@ -6,6 +6,20 @@ Versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.23.3] — 2026-08-10
+
+### Fixed
+- Jurisprudencia: hosts oficiales por dominio exacto/subdominio (no substring lookalike); año ROL ≠ año de sentencia en `metadata.anio`
+- Ranking juris: bonos full_text/host gated por cobertura; penaliza 0 tokens coincidentes
+- Legislación: cobertura 2 términos exige ambos; stages SPARQL/buscador también filtran por cobertura
+- Integridad: warning distinto para demotion por host vs sin texto
+- Citas: CPP/CPC/COT/etc. + bluebook/iso sin `No. PENAL`
+- Texto scrapeado: `&apos;`, mojibake ü/ç/º, `stripHtml` normaliza
+- Agencia/BCN: soft-fail 429/circuito/401 (sin `isError`); DT extract exige `DT_HOSTS`; warnings web juris conservan HTTP 429
+
+### Added
+- Tests de lookalike host, ranking 1-token/2-términos, softAgencyFailure, citas bluebook código
+
 ## [1.23.2] — 2026-08-10
 
 ### Fixed

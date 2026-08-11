@@ -170,12 +170,14 @@ function hitMatchesYear(
   const y = anio.trim();
   if (!/^(19|20)\d{2}$/.test(y)) return true;
   const short = y.slice(-2);
-  const hay = `${hit.rol} ${hit.content ?? ""}`;
+  // Match on ROL only — scanning full content causes false positives
+  // (other cases' years, "art. 20", page numbers).
+  const rol = hit.rol ?? "";
   return (
-    hay.includes(y) ||
-    hit.rol.includes(`-${short}`) ||
-    hit.rol.endsWith(`-${short}`) ||
-    new RegExp(`-${short}(?:-|$)`).test(hit.rol)
+    rol.includes(y) ||
+    rol.includes(`-${short}`) ||
+    rol.endsWith(`-${short}`) ||
+    new RegExp(`-${short}(?:-|$)`).test(rol)
   );
 }
 

@@ -34,3 +34,26 @@ test("rankLegislacionResults filtra OR noise con baja cobertura", () => {
   assert.match(ranked[0].title, /Responsabilidad médica/i);
   assert.ok(scoreLegislacionHit(ranked[0], terms) > 0.5);
 });
+
+test("rankLegislacionResults con 2 términos exige ambos", () => {
+  const terms = ["responsabilidad", "medica"];
+  const ranked = rankLegislacionResults(
+    [
+      {
+        source: "legislacion",
+        title: "Ley de responsabilidad fiscal",
+        citation: "responsabilidad fiscal",
+        url: "https://www.bcn.cl/leychile/navegar?idNorma=10",
+      },
+      {
+        source: "legislacion",
+        title: "Responsabilidad médica en el ejercicio profesional",
+        citation: "responsabilidad medica",
+        url: "https://www.bcn.cl/leychile/navegar?idNorma=11",
+      },
+    ],
+    terms,
+  );
+  assert.equal(ranked.length, 1);
+  assert.match(ranked[0].title, /Responsabilidad médica/i);
+});
