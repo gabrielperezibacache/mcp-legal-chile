@@ -6,6 +6,14 @@ Versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.23.2] — 2026-08-10
+
+### Fixed
+- HTTP 429 de LeyChile ya **no abre el circuit breaker** (solo cooling-down); evita cascada de soft-fails tras rate-limit
+
+### Added
+- `scripts/integrity-probe.mjs` — regresión de procedencia CGR, TC 787, citas y fail rápido idNorma
+
 ## [1.23.1] — 2026-08-10
 
 ### Fixed

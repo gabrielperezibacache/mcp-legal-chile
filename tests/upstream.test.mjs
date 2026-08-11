@@ -138,6 +138,16 @@ test("isUpstreamCoolingDown refleja circuito abierto", () => {
   assert.equal(isUpstreamCoolingDown("leychile"), true);
 });
 
+test("HTTP 429 terminal no abre el circuito (solo cooling-down)", () => {
+  resetUpstreamForTests();
+  const url = "https://www.leychile.cl/Consulta/obtxml?opt=7&idNorma=42";
+  for (let i = 0; i < 6; i++) {
+    noteTerminalUpstreamFailure(url, 429);
+  }
+  assert.equal(upstreamStatus().leychile.open, false);
+  assert.equal(isUpstreamCoolingDown("leychile"), true);
+});
+
 test("websearch permite concurrencia limitada sin serializar la operación completa", async () => {
   let running = 0;
   let maxRunning = 0;

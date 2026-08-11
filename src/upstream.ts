@@ -271,11 +271,16 @@ function noteFailure(key: HostKey, status?: number): void {
 /**
  * Count a terminal upstream failure after retries / fallbacks are exhausted.
  * Mid-retry errors go through withUpstreamLimit as transient only.
+ * HTTP 429 must NOT open the circuit — it only marks cooling-down via last429At.
  */
 export function noteTerminalUpstreamFailure(
   url: string,
   status?: number,
 ): void {
+  if (status === 429) {
+    noteTransient429(upstreamHostKey(url));
+    return;
+  }
   noteFailure(upstreamHostKey(url), status);
 }
 
